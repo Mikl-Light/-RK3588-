@@ -1,0 +1,41 @@
+# ============================================================================
+# scan_filter 的参数 —— 单一事实来源
+#
+# 为什么单独放一个文件，而不是写在 launch 的参数字典里（这是一个真实故障）：
+#   launch_ros 对「Python 字符串」参数会用 yaml.dump() 序列化后再传给节点
+#   （launch_ros/utilities/normalize_parameters.py:151-152）。
+#   PyYAML 的隐式解析器要求无穷写成带前导点的 `.inf`，因此它不认为裸 `inf`
+#   是数字，dump('inf') 输出的就是**不带引号**的 inf；接收端 rcl 按 YAML 1.1
+#   解析，裸 `inf` 正是 **DOUBLE 无穷**。于是节点按 STRING 声明该参数时抛
+#   InvalidParameterTypeException，在 __init__ 里直接崩溃。
+#   （对比：dump('460800') 会加引号 —— 数字样式的字符串反而安全，所以只有
+#    invalid_value 这一项出问题。）
+#   写成独立文件即可显式加引号，类型不再漂移；另外 launch 的 dict 里放数组
+#   会被 dump 成 `!!python/tuple`（PyYAML 专用标签），放文件里是正常的序列。
+#
+# ⚠ 本文件在 install/ 下也有一份副本，改动需要重新编译才生效：
+#     cd ~/ros2_ws && colcon build --packages-select warehouse_inspector
+# ============================================================================
+scan_filter:
+  ros__parameters:
+    scan_in: /scan_raw
+    scan_out: /scan
+
+    # 距离下限：挡掉车体自身结构（雷达装在车体最前方，扫描面离底盘上表面 3cm）。
+    # 实车若发现正前方 20~30cm 的小障碍不被识别，降到 0.20；
+    # 若地图里仍有落在车体足迹内的幽灵像素，往上加。
+    min_range: 0.28
+    max_range: 12.0
+
+    # 屏蔽扇区（laser 自身坐标系，单位「度」，两两成对）。
+    # 实测雷达 0° 指向车尾，-40°..0° 整段被自身结构遮挡。
+    # 想自己确认：把 report_period 设为 3.0，把车停在空旷处跑一次看日志。
+    mask_sectors: [-45.0, 10.0]
+
+    # 被过滤掉的光束写什么值。**必须写成带引号的字符串**，否则会被 YAML
+    # 解析成浮点（裸 inf/nan）而与声明类型冲突。
+    # 可用：'inf'（默认，ROS 惯例）/ 'nan' / 'max'（= max_range）/ 任意数值。
+    invalid_value: 'inf'
+
+    # >0 时周期性打印各方位最小回波，用于自校准（0 = 关闭）。
+    report_period: 0.0

@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "遥控",
+  "usingComponents": {
+    "joystick": "/components/joystick/joystick"
+  }
+}

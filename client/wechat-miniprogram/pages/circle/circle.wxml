@@ -1,0 +1,65 @@
+<view class="page">
+
+  <!-- 连接状态 -->
+  <view class="status-bar">
+    <view class="dot {{connected ? 'dot-on' : 'dot-off'}}"></view>
+    <text class="status-text">{{connected ? '已连接' : '未连接'}}</text>
+    <text class="addr">{{baseUrl}}</text>
+    <view class="chip chip-{{circleExecuting ? 'ok' : (circleDefined ? 'info' : 'idle')}}">{{circleStateText}}</view>
+  </view>
+
+  <!-- 大提示：说明为什么圆要自己算 -->
+  <view class="banner">
+    <text class="banner-text">麦轮绕圆 = 车头始终指向圆心 + 纯侧移前进 + 自转（vx=0, vy=−v, ω=v/R）。
+      nav2 的控制器只会"车头朝切线"转弯，画不了这种圆，所以这条路是 path_follower 自己控的。</text>
+  </view>
+
+  <!-- 给点 -->
+  <view class="panel">
+    <view class="panel-title-row">
+      <view class="panel-title">圈定圆周</view>
+      <view class="chip chip-idle">R = {{circleR}} m</view>
+    </view>
+
+    <canvas type="2d" id="map" class="map" bindtouchend="onMapTap"></canvas>
+    <view class="note">{{tapHint}}</view>
+
+    <view class="info-card inner">
+      <view class="info-row">
+        <text class="info-label">圆周</text>
+        <text class="info-val">{{circleText}}</text>
+      </view>
+      <view class="info-row">
+        <text class="info-label">当前位姿</text>
+        <text class="info-val">{{poseText}}<text class="v-sub"> · {{poseSource}}</text></text>
+      </view>
+      <view class="info-row" wx:if="{{sent.length}}">
+        <text class="info-label">已给点</text>
+        <text class="info-val">{{sent}}</text>
+      </view>
+    </view>
+
+    <view class="row">
+      <input class="xy-input" type="digit" placeholder="x" value="{{manualX}}" bindinput="onManualX" />
+      <input class="xy-input" type="digit" placeholder="y" value="{{manualY}}" bindinput="onManualY" />
+      <button class="mini-btn wide" bindtap="onSendManual" disabled="{{busy}}">发送</button>
+      <button class="mini-btn wide" bindtap="onUsePose" disabled="{{busy}}">用当前位姿</button>
+    </view>
+    <view class="note">手输坐标是 map 坐标系（和 RViz 里 Publish Point 的单位一致，米）。</view>
+  </view>
+
+  <!-- 动作 -->
+  <view class="panel">
+    <view class="panel-title">执行</view>
+    <view class="btn-row">
+      <button class="btn btn-ok" bindtap="onStart" disabled="{{busy}}">开始走圆</button>
+      <button class="btn btn-warn" bindtap="onStop" disabled="{{busy}}">停止</button>
+      <button class="btn btn-danger" bindtap="onClear" disabled="{{busy}}">清除圆</button>
+    </view>
+    <view class="banner warn" wx:if="{{circleExternal}}">
+      <text class="banner-text">当前 /cmd_vel 上有高频外部流量：说明 nav2 或 path_follower 正在控车。手动遥控请先停掉它们。</text>
+    </view>
+    <view class="note">遇障时 path_follower 会分级减速→急停，障碍移开会自动继续；也可以随时"停止"。</view>
+  </view>
+
+</view>

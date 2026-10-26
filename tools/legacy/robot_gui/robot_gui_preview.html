@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>麦轮小车控制中心 [预览版]</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', 'PingFang SC', sans-serif; background: #0f0f1a; color: #e0e0e0; overflow: hidden; height: 100vh; }
+#topbar { height: 48px; background: #16213e; display: flex; align-items: center; padding: 0 14px; gap: 6px; border-bottom: 1px solid #2a2a4a; flex-wrap: nowrap; }
+#topbar .title { font-weight: bold; font-size: 15px; color: #4fc3f7; margin-right: 10px; white-space: nowrap; }
+.preview-badge { background: #ff9800; color: #0f0f1a; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: bold; margin-left: -4px; }
+.mode-btn { padding: 5px 10px; border-radius: 5px; border: 1px solid #4fc3f7; background: transparent; color: #4fc3f7; cursor: pointer; font-size: 12px; white-space: nowrap; transition: all 0.15s; }
+.mode-btn:hover { background: rgba(79,195,247,0.15); }
+.mode-btn.active { background: #4fc3f7; color: #0f0f1a; font-weight: bold; }
+.mode-btn.todo { opacity: 0.35; cursor: not-allowed; border-color: #555; color: #888; }
+.mode-btn.todo:hover { background: transparent; }
+#topbar .spacer { flex: 1; }
+#conn-indicator { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.conn-dot { width: 9px; height: 9px; border-radius: 50%; background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+#nav-status-text { font-size: 12px; color: #aaa; min-width: 60px; }
+#main { display: flex; height: calc(100vh - 48px); }
+#map-container { flex: 1; position: relative; background: #0a0a14; overflow: hidden; }
+#map-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#sidebar { width: 220px; background: #16213e; padding: 12px; overflow-y: auto; border-left: 1px solid #2a2a4a; flex-shrink: 0; }
+.panel-title { font-weight: bold; font-size: 13px; color: #4fc3f7; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #2a2a4a; }
+.panel-title:first-child { margin-top: 0; }
+.stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+.stat-label { color: #888; }
+.stat-value { color: #4fc3f7; font-weight: bold; font-family: monospace; }
+.help-text { font-size: 11px; color: #666; line-height: 1.7; }
+#joystick-wrap { position: absolute; bottom: 18px; left: 18px; width: 130px; height: 130px; user-select: none; -webkit-user-select: none; touch-action: none; }
+#joystick-canvas { width: 130px; height: 130px; }
+#bottom-controls { position: absolute; bottom: 18px; right: 18px; display: flex; gap: 8px; align-items: center; }
+.ctrl-btn { width: 52px; height: 44px; font-size: 18px; border: 1px solid #4fc3f7; background: rgba(79,195,247,0.1); color: #4fc3f7; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.1s; user-select: none; -webkit-user-select: none; }
+.ctrl-btn:active, .ctrl-btn.pressed { background: #4fc3f7; color: #0f0f1a; }
+.ctrl-btn.stop { background: #f44336; border-color: #f44336; color: white; font-size: 13px; font-weight: bold; width: 60px; }
+.ctrl-btn.stop:active { background: #d32f2f; }
+#nav-overlay { position: absolute; top: 12px; left: 12px; background: rgba(22,33,62,0.92); padding: 8px 12px; border-radius: 6px; font-size: 12px; display: none; border: 1px solid #2a2a4a; max-width: 280px; }
+#nav-overlay .goal-text { color: #4caf50; }
+#nav-overlay .cancel-btn { margin-left: 10px; background: #f44336; color: white; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+#zoom-hint { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #444; pointer-events: none; }
+.path-tool-btn { padding: 5px 10px; border-radius: 5px; border: 1px solid #ff9800; background: transparent; color: #ff9800; cursor: pointer; font-size: 12px; white-space: nowrap; transition: all 0.15s; margin-left: 8px; }
+.path-tool-btn:hover { background: rgba(255,152,0,0.15); }
+.path-tool-btn.active { background: #ff9800; color: #0f0f1a; font-weight: bold; }
+.waypoint-tool-btn { padding: 5px 10px; border-radius: 5px; border: 1px solid #4fc3f7; background: transparent; color: #4fc3f7; cursor: pointer; font-size: 12px; white-space: nowrap; transition: all 0.15s; margin-left: 6px; }
+.waypoint-tool-btn:hover { background: rgba(79,195,247,0.15); }
+.waypoint-tool-btn.active { background: #4fc3f7; color: #0f0f1a; font-weight: bold; }
+#path-actions { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(22,33,62,0.95); padding: 8px 14px; border-radius: 6px; font-size: 12px; display: none; border: 1px solid #ff9800; z-index: 10; }
+#path-actions .path-info { color: #ff9800; margin-right: 12px; }
+#path-actions button { margin-left: 6px; padding: 4px 10px; border-radius: 4px; border: none; cursor: pointer; font-size: 11px; }
+#path-actions .btn-exec { background: #4caf50; color: white; }
+#path-actions .btn-clear { background: #666; color: white; }
+#path-actions .btn-cancel { background: #f44336; color: white; }
+#mock-toast { position: absolute; top: 12px; right: 12px; background: rgba(255,152,0,0.15); border: 1px solid #ff9800; color: #ff9800; padding: 6px 12px; border-radius: 6px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="title">麦轮小车控制中心</span>
+  <span class="preview-badge">预览版</span>
+  <button class="mode-btn active" data-mode="mapping_nav">建图导航一体化</button>
+  <button class="mode-btn todo" data-mode="pure_mapping">纯建图</button>
+  <button class="mode-btn todo" data-mode="pure_nav">纯导航</button>
+  <button class="mode-btn todo" data-mode="debug">调试模式</button>
+  <button class="path-tool-btn" id="btn-draw-path">✏️ 画路径</button>
+  <button class="waypoint-tool-btn" id="btn-waypoint">📍 航点导航</button>
+  <div class="spacer"></div>
+  <span id="nav-status-text">待机</span>
+  <div id="conn-indicator"><span class="conn-dot"></span><span id="conn-text">模拟数据</span></div>
+</div>
+
+<div id="main">
+  <div id="map-container">
+    <canvas id="map-canvas"></canvas>
+    <div id="joystick-wrap"><canvas id="joystick-canvas" width="130" height="130"></canvas></div>
+    <div id="bottom-controls">
+      <button class="ctrl-btn" id="btn-left" title="左移">◀</button>
+      <button class="ctrl-btn stop" id="btn-stop">STOP</button>
+      <button class="ctrl-btn" id="btn-right" title="右移">▶</button>
+    </div>
+    <div id="nav-overlay">
+      <span class="goal-text" id="nav-goal-text"></span>
+      <button class="cancel-btn" id="btn-cancel-nav">取消导航</button>
+    </div>
+    <div id="path-actions">
+      <span class="path-info" id="path-info">已添加 0 个路径点</span>
+      <button class="btn-exec" id="btn-exec-path">▶ 执行路径</button>
+      <button class="btn-clear" id="btn-clear-path">清除</button>
+      <button class="btn-cancel" id="btn-cancel-path" style="display:none;">取消执行</button>
+    </div>
+    <div id="waypoint-actions" style="display:none; position:absolute; top:12px; left:50%; transform:translateX(-50%); background:rgba(22,33,62,0.95); padding:8px 14px; border-radius:6px; font-size:12px; border:1px solid #4fc3f7; z-index:10;">
+      <span class="path-info" id="waypoint-info" style="color:#4fc3f7;">已添加 0 个航点</span>
+      <button class="btn-exec" id="btn-exec-waypoint" style="background:#2196f3;">▶ 开始导航</button>
+      <button class="btn-clear" id="btn-clear-waypoint">清除</button>
+      <button class="btn-cancel" id="btn-cancel-waypoint" style="display:none;">取消导航</button>
+    </div>
+    <div id="mock-toast">🖥️ 预览模式 — 数据为模拟，非实车</div>
+    <div id="zoom-hint">滚轮缩放 · 右键拖动平移 · 左键点击设置导航目标</div>
+  </div>
+  <div id="sidebar">
+    <div class="panel-title">运动状态</div>
+    <div class="stat-row"><span class="stat-label">线速度 Vx</span><span class="stat-value" id="s-vx">0.00 m/s</span></div>
+    <div class="stat-row"><span class="stat-label">线速度 Vy</span><span class="stat-value" id="s-vy">0.00 m/s</span></div>
+    <div class="stat-row"><span class="stat-label">角速度 Wz</span><span class="stat-value" id="s-wz">0.00 rad/s</span></div>
+    <div class="panel-title">位姿</div>
+    <div class="stat-row"><span class="stat-label">位置 X</span><span class="stat-value" id="s-x">0.000 m</span></div>
+    <div class="stat-row"><span class="stat-label">位置 Y</span><span class="stat-value" id="s-y">0.000 m</span></div>
+    <div class="stat-row"><span class="stat-label">航向 Yaw</span><span class="stat-value" id="s-yaw">0.0°</span></div>
+    <div class="panel-title">传感器</div>
+    <div class="stat-row"><span class="stat-label">激光有效点</span><span class="stat-value" id="s-scan">0</span></div>
+    <div class="stat-row"><span class="stat-label">地图尺寸</span><span class="stat-value" id="s-mapsize">--</span></div>
+    <div class="panel-title">操作说明</div>
+    <div class="help-text">
+      • 左键点击地图 → 设置导航目标<br>
+      • 滚轮 → 缩放地图<br>
+      • 右键拖动 → 平移地图<br>
+      • 左下角摇杆 → 手动遥控<br>
+      • ◀ ▶ 按钮 → 麦轮横向移动<br>
+      • STOP → 紧急停止<br>
+      • 待开发模式仅为占位
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  数据存储
+// ============================================================
+let mapData = null;
+let mapDirty = true;
+let scanData = null;
+let poseData = { x: 5.0, y: 5.0, yaw: 0.3, vx: 0, vy: 0, wz: 0 };
+let pathData = null;
+let navGoal = null;
+let pathDrawMode = false;
+let customPath = [];
+let pathExecuting = false;
+let pathExecIndex = 0;
+let isDrawingPath = false;
+let waypointMode = false;
+let waypoints = [];
+let waypointExecuting = false;
+let waypointExecIndex = 0;
+let mockTime = 0;
+
+// ============================================================
+//  地图 Canvas 渲染
+// ============================================================
+const mapCanvas = document.getElementById('map-canvas');
+const mapCtx = mapCanvas.getContext('2d');
+const offscreen = document.createElement('canvas');
+const offCtx = offscreen.getContext('2d');
+let viewScale = 30;
+let viewOffsetX = 0, viewOffsetY = 0;
+let viewInitialized = false;
+let isPanning = false, panStartX = 0, panStartY = 0, panStartOX = 0, panStartOY = 0;
+
+function resizeCanvas() {
+  const rect = mapCanvas.parentElement.getBoundingClientRect();
+  mapCanvas.width = rect.width;
+  mapCanvas.height = rect.height;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function worldToCanvas(wx, wy) {
+  if (!mapData) return [0, 0];
+  const cx = (wx - mapData.origin_x) * viewScale + viewOffsetX + mapCanvas.width / 2;
+  const cy = mapCanvas.height / 2 - (wy - mapData.origin_y) * viewScale + viewOffsetY;
+  return [cx, cy];
+}
+function canvasToWorld(cx, cy) {
+  if (!mapData) return [0, 0];
+  const wx = (cx - mapCanvas.width / 2 - viewOffsetX) / viewScale + mapData.origin_x;
+  const wy = (mapCanvas.height / 2 - cy + viewOffsetY) / viewScale + mapData.origin_y;
+  return [wx, wy];
+}
+
+function renderMapToOffscreen() {
+  if (!mapData) return;
+  offscreen.width = mapData.width;
+  offscreen.height = mapData.height;
+  const imgData = offCtx.createImageData(mapData.width, mapData.height);
+  const d = imgData.data;
+  const raw = mapData.data;
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i];
+    const p = i * 4;
+    if (v === -1 || v === 255) { d[p]=48; d[p+1]=48; d[p+2]=48; d[p+3]=255; }
+    else if (v === 0) { d[p]=205; d[p+1]=205; d[p+2]=205; d[p+3]=255; }
+    else { d[p]=0; d[p+1]=0; d[p+2]=0; d[p+3]=255; }
+  }
+  offCtx.putImageData(imgData, 0, 0);
+  mapDirty = false;
+}
+
+function render() {
+  mapCtx.fillStyle = '#1a1a1a';
+  mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+  if (mapData) {
+    if (mapDirty) renderMapToOffscreen();
+    const [ox, oy] = worldToCanvas(mapData.origin_x, mapData.origin_y);
+    const mapW = mapData.width * mapData.resolution * viewScale;
+    const mapH = mapData.height * mapData.resolution * viewScale;
+    mapCtx.drawImage(offscreen, ox, oy - mapH, mapW, mapH);
+  }
+  if (pathData && pathData.points && pathData.points.length > 1) {
+    mapCtx.strokeStyle = 'rgba(76,175,80,0.8)';
+    mapCtx.lineWidth = 2;
+    mapCtx.beginPath();
+    for (let i = 0; i < pathData.points.length; i++) {
+      const [cx, cy] = worldToCanvas(pathData.points[i][0], pathData.points[i][1]);
+      if (i === 0) mapCtx.moveTo(cx, cy); else mapCtx.lineTo(cx, cy);
+    }
+    mapCtx.stroke();
+  }
+  if (scanData && poseData) {
+    const [rx, ry] = worldToCanvas(poseData.x, poseData.y);
+    mapCtx.fillStyle = 'rgba(79,195,247,0.45)';
+    const inc = scanData.angle_increment;
+    let angle = scanData.angle_min + poseData.yaw;
+    for (let i = 0; i < scanData.ranges.length; i++) {
+      const r = scanData.ranges[i];
+      if (r > 0.05 && r < 15) {
+        const ex = rx + Math.cos(angle) * r * viewScale;
+        const ey = ry - Math.sin(angle) * r * viewScale;
+        mapCtx.beginPath();
+        mapCtx.arc(ex, ey, 1.2, 0, Math.PI * 2);
+        mapCtx.fill();
+      }
+      angle += inc;
+    }
+  }
+  // 绘制用户画的路径（连续曲线）
+  if (customPath.length > 1) {
+    // 路径线
+    mapCtx.strokeStyle = pathExecuting ? 'rgba(255,87,34,0.95)' : 'rgba(255,152,0,0.85)';
+    mapCtx.lineWidth = 3;
+    mapCtx.lineCap = 'round';
+    mapCtx.lineJoin = 'round';
+    mapCtx.beginPath();
+    for (let i = 0; i < customPath.length; i++) {
+      const [cx, cy] = worldToCanvas(customPath[i].x, customPath[i].y);
+      if (i === 0) mapCtx.moveTo(cx, cy); else mapCtx.lineTo(cx, cy);
+    }
+    mapCtx.stroke();
+    // 起点标记（绿色）
+    const [sx, sy] = worldToCanvas(customPath[0].x, customPath[0].y);
+    mapCtx.fillStyle = '#4caf50';
+    mapCtx.beginPath();
+    mapCtx.arc(sx, sy, 7, 0, Math.PI * 2);
+    mapCtx.fill();
+    mapCtx.fillStyle = '#fff';
+    mapCtx.font = 'bold 9px sans-serif';
+    mapCtx.textAlign = 'center';
+    mapCtx.textBaseline = 'middle';
+    mapCtx.fillText('起', sx, sy);
+    // 终点标记（红色）
+    const [ex, ey] = worldToCanvas(customPath[customPath.length-1].x, customPath[customPath.length-1].y);
+    mapCtx.fillStyle = '#f44336';
+    mapCtx.beginPath();
+    mapCtx.arc(ex, ey, 7, 0, Math.PI * 2);
+    mapCtx.fill();
+    mapCtx.fillStyle = '#fff';
+    mapCtx.fillText('终', ex, ey);
+    // 执行中当前位置高亮
+    if (pathExecuting && pathExecIndex < customPath.length) {
+      const [cx, cy] = worldToCanvas(customPath[pathExecIndex].x, customPath[pathExecIndex].y);
+      mapCtx.strokeStyle = '#ffeb3b';
+      mapCtx.lineWidth = 2;
+      mapCtx.beginPath();
+      mapCtx.arc(cx, cy, 10, 0, Math.PI * 2);
+      mapCtx.stroke();
+    }
+  }
+  // 绘制航点（方案二）
+  if (waypoints.length > 0) {
+    // 航点之间的规划路径
+    mapCtx.strokeStyle = waypointExecuting ? 'rgba(76,175,80,0.9)' : 'rgba(76,175,80,0.5)';
+    mapCtx.lineWidth = 2;
+    mapCtx.setLineDash(waypointExecuting ? [] : [8, 4]);
+    mapCtx.beginPath();
+    const [rx0, ry0] = worldToCanvas(poseData.x, poseData.y);
+    mapCtx.moveTo(rx0, ry0);
+    for (let i = 0; i < waypoints.length; i++) {
+      const [cx, cy] = worldToCanvas(waypoints[i].x, waypoints[i].y);
+      mapCtx.lineTo(cx, cy);
+    }
+    mapCtx.stroke();
+    mapCtx.setLineDash([]);
+    // 航点标记
+    for (let i = 0; i < waypoints.length; i++) {
+      const [cx, cy] = worldToCanvas(waypoints[i].x, waypoints[i].y);
+      const isCurrent = waypointExecuting && i === waypointExecIndex;
+      const isPassed = waypointExecuting && i < waypointExecIndex;
+      mapCtx.fillStyle = isCurrent ? '#2196f3' : (isPassed ? '#4caf50' : '#4fc3f7');
+      mapCtx.beginPath();
+      mapCtx.arc(cx, cy, isCurrent ? 8 : 6, 0, Math.PI * 2);
+      mapCtx.fill();
+      mapCtx.fillStyle = '#fff';
+      mapCtx.font = 'bold 10px monospace';
+      mapCtx.textAlign = 'center';
+      mapCtx.textBaseline = 'middle';
+      mapCtx.fillText(String(i + 1), cx, cy);
+      if (isPassed) {
+        mapCtx.strokeStyle = '#fff';
+        mapCtx.lineWidth = 2;
+        mapCtx.beginPath();
+        mapCtx.moveTo(cx - 3, cy);
+        mapCtx.lineTo(cx - 1, cy + 2);
+        mapCtx.lineTo(cx + 3, cy - 2);
+        mapCtx.stroke();
+      }
+    }
+  }
+  if (navGoal) {
+    const [gx, gy] = worldToCanvas(navGoal.x, navGoal.y);
+    mapCtx.strokeStyle = '#ff9800';
+    mapCtx.lineWidth = 2;
+    mapCtx.beginPath();
+    mapCtx.arc(gx, gy, 10, 0, Math.PI * 2);
+    mapCtx.stroke();
+    mapCtx.beginPath();
+    mapCtx.moveTo(gx, gy);
+    mapCtx.lineTo(gx + Math.cos(navGoal.yaw) * 18, gy - Math.sin(navGoal.yaw) * 18);
+    mapCtx.stroke();
+  }
+  if (poseData) {
+    const [rx, ry] = worldToCanvas(poseData.x, poseData.y);
+    mapCtx.save();
+    mapCtx.translate(rx, ry);
+    mapCtx.rotate(-poseData.yaw);
+    mapCtx.fillStyle = '#4caf50';
+    mapCtx.beginPath();
+    mapCtx.moveTo(14, 0);
+    mapCtx.lineTo(-8, -7);
+    mapCtx.lineTo(-4, 0);
+    mapCtx.lineTo(-8, 7);
+    mapCtx.closePath();
+    mapCtx.fill();
+    mapCtx.restore();
+    mapCtx.strokeStyle = 'rgba(76,175,80,0.4)';
+    mapCtx.lineWidth = 1;
+    mapCtx.beginPath();
+    mapCtx.arc(rx, ry, 16, 0, Math.PI * 2);
+    mapCtx.stroke();
+  }
+  requestAnimationFrame(render);
+}
+render();
+
+// 地图交互
+mapCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.85 : 1.18;
+  const [wx, wy] = canvasToWorld(e.offsetX, e.offsetY);
+  viewScale *= factor;
+  viewScale = Math.max(2, Math.min(200, viewScale));
+  const [cx, cy] = worldToCanvas(wx, wy);
+  viewOffsetX += e.offsetX - cx;
+  viewOffsetY += e.offsetY - cy;
+}, { passive: false });
+
+mapCanvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) {
+    isPanning = true;
+    panStartX = e.offsetX; panStartY = e.offsetY;
+    panStartOX = viewOffsetX; panStartOY = viewOffsetY;
+    e.preventDefault();
+  } else if (e.button === 0 && pathDrawMode && !pathExecuting) {
+    isDrawingPath = true;
+    customPath = [];
+    const [wx, wy] = canvasToWorld(e.offsetX, e.offsetY);
+    customPath.push({ x: wx, y: wy });
+    document.getElementById('path-info').textContent = '绘制中... 1 个点';
+    e.preventDefault();
+  }
+});
+mapCanvas.addEventListener('mousemove', (e) => {
+  if (isPanning) {
+    viewOffsetX = panStartOX + (e.offsetX - panStartX);
+    viewOffsetY = panStartOY + (e.offsetY - panStartY);
+  }
+  if (isDrawingPath) {
+    const [wx, wy] = canvasToWorld(e.offsetX, e.offsetY);
+    const last = customPath[customPath.length - 1];
+    const dx = wx - last.x, dy = wy - last.y;
+    if (Math.sqrt(dx*dx + dy*dy) > 0.06) {
+      customPath.push({ x: wx, y: wy });
+      document.getElementById('path-info').textContent = '绘制中... ' + customPath.length + ' 个点';
+    }
+  }
+});
+mapCanvas.addEventListener('mouseup', (e) => {
+  if (e.button === 2) isPanning = false;
+  if (e.button === 0 && isDrawingPath) {
+    isDrawingPath = false;
+    if (customPath.length >= 3) {
+      document.getElementById('path-info').textContent = '路径完成: ' + customPath.length + ' 个点';
+    } else {
+      customPath = [];
+      document.getElementById('path-info').textContent = '路径太短，请重新拖拽绘制';
+    }
+  }
+});
+window.addEventListener('mouseup', (e) => {
+  if (isDrawingPath && e.button === 0) {
+    isDrawingPath = false;
+    if (customPath.length >= 3) {
+      document.getElementById('path-info').textContent = '路径完成: ' + customPath.length + ' 个点';
+    } else {
+      customPath = [];
+      document.getElementById('path-info').textContent = '路径太短，请重新拖拽绘制';
+    }
+  }
+});
+mapCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+mapCanvas.addEventListener('click', (e) => {
+  if (isPanning) return;
+  const [wx, wy] = canvasToWorld(e.offsetX, e.offsetY);
+  if (pathDrawMode) {
+    return; // 画路径模式用拖拽绘制，不响应单击
+  }
+  if (waypointMode) {
+    waypoints.push({ x: wx, y: wy });
+    document.getElementById('waypoint-info').textContent = '已添加 ' + waypoints.length + ' 个航点';
+    return;
+  }
+  if (pathExecuting || waypointExecuting) return;
+  navGoal = { x: wx, y: wy, yaw: poseData.yaw };
+  document.getElementById('nav-overlay').style.display = 'block';
+  document.getElementById('nav-goal-text').textContent = '导航目标: (' + wx.toFixed(2) + ', ' + wy.toFixed(2) + ')';
+  document.getElementById('nav-status-text').textContent = '导航中';
+});
+
+// ============================================================
+//  虚拟摇杆
+// ============================================================
+const jsCanvas = document.getElementById('joystick-canvas');
+const jsCtx = jsCanvas.getContext('2d');
+const jsCenter = 65, jsBaseR = 55, jsKnobR = 22;
+let jsActive = false, jsKnobX = 65, jsKnobY = 65;
+
+function drawJoystick() {
+  jsCtx.clearRect(0, 0, 130, 130);
+  jsCtx.fillStyle = 'rgba(79,195,247,0.1)';
+  jsCtx.beginPath(); jsCtx.arc(jsCenter, jsCenter, jsBaseR, 0, Math.PI*2); jsCtx.fill();
+  jsCtx.strokeStyle = 'rgba(79,195,247,0.4)';
+  jsCtx.lineWidth = 2;
+  jsCtx.stroke();
+  jsCtx.fillStyle = jsActive ? '#4fc3f7' : 'rgba(79,195,247,0.6)';
+  jsCtx.beginPath(); jsCtx.arc(jsKnobX, jsKnobY, jsKnobR, 0, Math.PI*2); jsCtx.fill();
+}
+drawJoystick();
+
+function jsStart(clientX, clientY) {
+  jsActive = true;
+  const rect = jsCanvas.getBoundingClientRect();
+  let dx = (clientX - rect.left) * (130 / rect.width) - jsCenter;
+  let dy = (clientY - rect.top) * (130 / rect.height) - jsCenter;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist > jsBaseR) { dx = dx/dist*jsBaseR; dy = dy/dist*jsBaseR; }
+  jsKnobX = jsCenter + dx; jsKnobY = jsCenter + dy;
+  drawJoystick();
+}
+function jsEnd() {
+  jsActive = false;
+  jsKnobX = jsCenter; jsKnobY = jsCenter;
+  drawJoystick();
+}
+jsCanvas.addEventListener('mousedown', (e) => jsStart(e.clientX, e.clientY));
+window.addEventListener('mousemove', (e) => { if (jsActive) jsStart(e.clientX, e.clientY); });
+window.addEventListener('mouseup', () => { if (jsActive) jsEnd(); });
+
+// 横向按钮 + STOP
+let lateralDir = 0;
+function setupHoldButton(id, dir) {
+  const btn = document.getElementById(id);
+  const start = (e) => { e.preventDefault(); lateralDir = dir; btn.classList.add('pressed'); };
+  const end = () => { if (lateralDir === dir) { lateralDir = 0; btn.classList.remove('pressed'); } };
+  btn.addEventListener('mousedown', start);
+  window.addEventListener('mouseup', end);
+}
+setupHoldButton('btn-left', -1);
+setupHoldButton('btn-right', 1);
+document.getElementById('btn-stop').addEventListener('click', () => {
+  navGoal = null; pathData = null;
+  document.getElementById('nav-overlay').style.display = 'none';
+  document.getElementById('nav-status-text').textContent = '已停止';
+  setTimeout(() => { document.getElementById('nav-status-text').textContent = '待机'; }, 1000);
+});
+document.getElementById('btn-cancel-nav').addEventListener('click', () => {
+  navGoal = null; pathData = null;
+  document.getElementById('nav-overlay').style.display = 'none';
+  document.getElementById('nav-status-text').textContent = '已取消';
+  setTimeout(() => { document.getElementById('nav-status-text').textContent = '待机'; }, 1000);
+});
+
+// 模式按钮
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.classList.contains('todo')) return;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+// 画路径功能
+const btnDrawPath = document.getElementById('btn-draw-path');
+const pathActions = document.getElementById('path-actions');
+const btnExecPath = document.getElementById('btn-exec-path');
+const btnClearPath = document.getElementById('btn-clear-path');
+const btnCancelPath = document.getElementById('btn-cancel-path');
+
+btnDrawPath.addEventListener('click', () => {
+  if (pathExecuting) return;
+  pathDrawMode = !pathDrawMode;
+  btnDrawPath.classList.toggle('active', pathDrawMode);
+  pathActions.style.display = pathDrawMode ? 'block' : 'none';
+  if (pathDrawMode) {
+    waypointMode = false;
+    btnWaypoint.classList.remove('active');
+    waypointActions.style.display = 'none';
+  }
+});
+
+btnClearPath.addEventListener('click', () => {
+  customPath = [];
+  document.getElementById('path-info').textContent = '按住左键拖拽绘制路径';
+});
+
+btnExecPath.addEventListener('click', () => {
+  if (customPath.length < 3) {
+    alert('请先拖拽绘制一条路径（至少 3 个点）');
+    return;
+  }
+  pathDrawMode = false;
+  btnDrawPath.classList.remove('active');
+  pathExecuting = true;
+  pathExecIndex = 0;
+  navGoal = null;
+  pathData = null;
+  document.getElementById('nav-overlay').style.display = 'none';
+  document.getElementById('nav-status-text').textContent = '路径执行中 (1/' + customPath.length + ')';
+  btnExecPath.style.display = 'none';
+  btnClearPath.style.display = 'none';
+  btnCancelPath.style.display = 'inline';
+});
+
+btnCancelPath.addEventListener('click', () => {
+  pathExecuting = false;
+  customPath = [];
+  pathActions.style.display = 'none';
+  btnExecPath.style.display = 'inline';
+  btnClearPath.style.display = 'inline';
+  btnCancelPath.style.display = 'none';
+  document.getElementById('nav-status-text').textContent = '已取消';
+  setTimeout(() => { document.getElementById('nav-status-text').textContent = '待机'; }, 1000);
+});
+
+// 方案二：航点导航
+const btnWaypoint = document.getElementById('btn-waypoint');
+const waypointActions = document.getElementById('waypoint-actions');
+const btnExecWaypoint = document.getElementById('btn-exec-waypoint');
+const btnClearWaypoint = document.getElementById('btn-clear-waypoint');
+const btnCancelWaypoint = document.getElementById('btn-cancel-waypoint');
+
+btnWaypoint.addEventListener('click', () => {
+  if (waypointExecuting) return;
+  waypointMode = !waypointMode;
+  btnWaypoint.classList.toggle('active', waypointMode);
+  waypointActions.style.display = waypointMode ? 'block' : 'none';
+  if (waypointMode) {
+    // 退出画路径模式
+    pathDrawMode = false;
+    btnDrawPath.classList.remove('active');
+    pathActions.style.display = 'none';
+  }
+});
+
+btnClearWaypoint.addEventListener('click', () => {
+  waypoints = [];
+  document.getElementById('waypoint-info').textContent = '已添加 0 个航点';
+});
+
+btnExecWaypoint.addEventListener('click', () => {
+  if (waypoints.length < 1) {
+    alert('至少需要 1 个航点');
+    return;
+  }
+  waypointMode = false;
+  btnWaypoint.classList.remove('active');
+  waypointExecuting = true;
+  waypointExecIndex = 0;
+  navGoal = null;
+  pathData = null;
+  document.getElementById('nav-overlay').style.display = 'none';
+  document.getElementById('nav-status-text').textContent = '航点导航中 (1/' + waypoints.length + ')';
+  btnExecWaypoint.style.display = 'none';
+  btnClearWaypoint.style.display = 'none';
+  btnCancelWaypoint.style.display = 'inline';
+});
+
+btnCancelWaypoint.addEventListener('click', () => {
+  waypointExecuting = false;
+  waypoints = [];
+  waypointActions.style.display = 'none';
+  btnExecWaypoint.style.display = 'inline';
+  btnClearWaypoint.style.display = 'inline';
+  btnCancelWaypoint.style.display = 'none';
+  document.getElementById('nav-status-text').textContent = '已取消';
+  setTimeout(() => { document.getElementById('nav-status-text').textContent = '待机'; }, 1000);
+});
+
+// ============================================================
+//  模拟数据生成器（预览版专用）
+// ============================================================
+function generateMockMap() {
+  const W = 400, H = 400, res = 0.05;
+  const data = new Uint8Array(W * H).fill(-1);
+  // 边界墙
+  for (let x = 0; x < W; x++) { data[x] = 100; data[(H-1)*W + x] = 100; }
+  for (let y = 0; y < H; y++) { data[y*W] = 100; data[y*W + W-1] = 100; }
+  // 内部障碍物
+  const obstacles = [
+    {x0:80, y0:80, x1:120, y1:100},
+    {x0:240, y0:120, x1:260, y1:200},
+    {x0:120, y0:240, x1:200, y1:260},
+    {x0:300, y0:280, x1:340, y1:300},
+    {x0:60, y0:300, x1:90, y1:340},
+    {x0:180, y0:160, x1:200, y1:180},
+  ];
+  for (let ob of obstacles) {
+    for (let y = ob.y0; y < ob.y1; y++)
+      for (let x = ob.x0; x < ob.x1; x++)
+        if (x>=0 && x<W && y>=0 && y<H) data[y*W+x] = 100;
+  }
+  // 空闲区域
+  for (let y = 2; y < H-2; y++)
+    for (let x = 2; x < W-2; x++)
+      if (data[y*W+x] === -1) data[y*W+x] = 0;
+  // 右上角未探索区域
+  for (let y = 270; y < 398; y++)
+    for (let x = 210; x < 398; x++)
+      if (data[y*W+x] === 0) data[y*W+x] = -1;
+
+  mapData = { width: W, height: H, resolution: res, origin_x: 0, origin_y: 0, data: data };
+  document.getElementById('s-mapsize').textContent = W + 'x' + H;
+}
+
+function generateMockScan() {
+  if (!mapData) return;
+  const angle_min = -Math.PI, angle_max = Math.PI, inc = Math.PI / 180;
+  const ranges = [];
+  const maxRange = 10.0;
+  let valid = 0;
+  for (let a = angle_min; a <= angle_max; a += inc) {
+    const worldAngle = a + poseData.yaw;
+    let r = maxRange;
+    const step = 0.05;
+    for (let d = 0.15; d < maxRange; d += step) {
+      const wx = poseData.x + Math.cos(worldAngle) * d;
+      const wy = poseData.y + Math.sin(worldAngle) * d;
+      const mx = Math.floor(wx / mapData.resolution);
+      const my = Math.floor(wy / mapData.resolution);
+      if (mx < 0 || mx >= mapData.width || my < 0 || my >= mapData.height) { r = d; break; }
+      if (mapData.data[my * mapData.width + mx] === 100) { r = d; break; }
+    }
+    r += (Math.random() - 0.5) * 0.03;
+    ranges.push(Math.round(r * 1000) / 1000);
+    if (r > 0.15 && r < maxRange - 0.1) valid++;
+  }
+  scanData = { angle_min, angle_max, angle_increment: inc, ranges };
+  document.getElementById('s-scan').textContent = valid;
+}
+
+function updateMockPose(dt) {
+  mockTime += dt;
+  // 路径执行模式：沿用户画的路径点依次移动
+  if (pathExecuting && customPath.length > 0) {
+    if (pathExecIndex >= customPath.length) {
+      // 路径执行完毕
+      pathExecuting = false;
+      customPath = [];
+      pathActions.style.display = 'none';
+      btnExecPath.style.display = 'inline';
+      btnClearPath.style.display = 'inline';
+      btnCancelPath.style.display = 'none';
+      document.getElementById('nav-status-text').textContent = '路径执行完成';
+      setTimeout(() => { document.getElementById('nav-status-text').textContent = '待机'; }, 2000);
+      return;
+    }
+    // 跳过过近的路径点（密集曲线采样点不需要逐个到达）
+    while (pathExecIndex < customPath.length) {
+      const t = customPath[pathExecIndex];
+      const ddx = t.x - poseData.x, ddy = t.y - poseData.y;
+      if (Math.sqrt(ddx*ddx + ddy*ddy) < 0.12) {
+        pathExecIndex++;
+      } else break;
+    }
+    if (pathExecIndex >= customPath.length) { return; }
+    const target = customPath[pathExecIndex];
+    const dx = target.x - poseData.x;
+    const dy = target.y - poseData.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    poseData.yaw = Math.atan2(dy, dx);
+    const speed = Math.min(0.3, dist * 0.8);
+    poseData.vx = speed * Math.cos(poseData.yaw);
+    poseData.vy = speed * Math.sin(poseData.yaw);
+    poseData.wz = 0;
+    poseData.x += poseData.vx * dt;
+    poseData.y += poseData.vy * dt;
+    // 显示剩余路径
+    const remaining = customPath.slice(pathExecIndex);
+    pathData = { points: [[poseData.x, poseData.y]].concat(remaining.map(p => [p.x, p.y])) };
+    document.getElementById('s-vx').textContent = poseData.vx.toFixed(2) + ' m/s';
+    document.getElementById('s-vy').textContent = poseData.vy.toFixed(2) + ' m/s';
+    document.getElementById('s-wz').textContent = poseData.wz.toFixed(2) + ' rad/s';
+    document.getElementById('s-x').textContent = poseData.x.toFixed(3) + ' m';
+    document.getElementById('s-y').textContent = poseData.y.toFixed(3) + ' m';
+    document.getElementById('s-yaw').textContent = (poseData.yaw * 180 / Math.PI).toFixed(1) + '°';
+    return;
+  }
+  // 方案二：航点导航执行
+  if (waypointExecuting && waypoints.length > 0) {
+    if (waypointExecIndex >= waypoints.length) {
+      waypointExecuting = false;
+      waypoints = [];
+      waypointActions.style.display = 'none';
+      btnExecWaypoint.style.display = 'inline';
+      btnClearWaypoint.style.display = 'inline';
+      btnCancelWaypoint.style.display = 'none';
+      document.getElementById('nav-status-text').textContent = '航点导航完成';
+      setTimeout(() => { document.getElementById('nav-status-text').textContent = '待机'; }, 2000);
+      return;
+    }
+    const target = waypoints[waypointExecIndex];
+    const dx = target.x - poseData.x;
+    const dy = target.y - poseData.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 0.2) {
+      waypointExecIndex++;
+      document.getElementById('nav-status-text').textContent = '航点导航中 (' + Math.min(waypointExecIndex+1, waypoints.length) + '/' + waypoints.length + ')';
+      return;
+    }
+    poseData.yaw = Math.atan2(dy, dx);
+    const speed = Math.min(0.35, dist * 0.6);
+    poseData.vx = speed * Math.cos(poseData.yaw);
+    poseData.vy = speed * Math.sin(poseData.yaw);
+    poseData.wz = 0;
+    poseData.x += poseData.vx * dt;
+    poseData.y += poseData.vy * dt;
+    pathData = { points: [[poseData.x, poseData.y], [target.x, target.y]] };
+    document.getElementById('s-vx').textContent = poseData.vx.toFixed(2) + ' m/s';
+    document.getElementById('s-vy').textContent = poseData.vy.toFixed(2) + ' m/s';
+    document.getElementById('s-wz').textContent = poseData.wz.toFixed(2) + ' rad/s';
+    document.getElementById('s-x').textContent = poseData.x.toFixed(3) + ' m';
+    document.getElementById('s-y').textContent = poseData.y.toFixed(3) + ' m';
+    document.getElementById('s-yaw').textContent = (poseData.yaw * 180 / Math.PI).toFixed(1) + '°';
+    return;
+  }
+  if (navGoal) {
+    const dx = navGoal.x - poseData.x;
+    const dy = navGoal.y - poseData.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 0.2) {
+      document.getElementById('nav-status-text').textContent = '导航完成';
+      document.getElementById('nav-goal-text').textContent = '已到达目标';
+      navGoal = null;
+      pathData = null;
+      setTimeout(() => {
+        document.getElementById('nav-overlay').style.display = 'none';
+        document.getElementById('nav-status-text').textContent = '待机';
+      }, 2000);
+    } else {
+      poseData.yaw = Math.atan2(dy, dx);
+      const speed = Math.min(0.35, dist * 0.5);
+      poseData.vx = speed * Math.cos(poseData.yaw);
+      poseData.vy = speed * Math.sin(poseData.yaw);
+      poseData.wz = 0;
+      poseData.x += poseData.vx * dt;
+      poseData.y += poseData.vy * dt;
+      pathData = { points: [
+        [poseData.x, poseData.y],
+        [(poseData.x + navGoal.x)/2, (poseData.y + navGoal.y)/2 + 0.3],
+        [navGoal.x, navGoal.y]
+      ]};
+    }
+  } else {
+    // 绕圈移动
+    const radius = 3.0;
+    const cx = 10.0, cy = 10.0;
+    const speed = 0.25;
+    const angle = mockTime * speed / radius;
+    poseData.x = cx + Math.cos(angle) * radius;
+    poseData.y = cy + Math.sin(angle) * radius;
+    poseData.yaw = angle + Math.PI / 2;
+    poseData.vx = speed * Math.cos(poseData.yaw);
+    poseData.vy = speed * Math.sin(poseData.yaw);
+    poseData.wz = speed / radius;
+  }
+
+  document.getElementById('s-vx').textContent = poseData.vx.toFixed(2) + ' m/s';
+  document.getElementById('s-vy').textContent = poseData.vy.toFixed(2) + ' m/s';
+  document.getElementById('s-wz').textContent = poseData.wz.toFixed(2) + ' rad/s';
+  document.getElementById('s-x').textContent = poseData.x.toFixed(3) + ' m';
+  document.getElementById('s-y').textContent = poseData.y.toFixed(3) + ' m';
+  document.getElementById('s-yaw').textContent = (poseData.yaw * 180 / Math.PI).toFixed(1) + '°';
+
+  // 首次收到位姿且地图已加载时自动居中
+  if (!viewInitialized && mapData) {
+    const [rx, ry] = worldToCanvas(poseData.x, poseData.y);
+    viewOffsetX += mapCanvas.width / 2 - rx;
+    viewOffsetY += mapCanvas.height / 2 - ry;
+    viewInitialized = true;
+  }
+}
+
+// 启动模拟循环
+generateMockMap();
+let lastFrame = performance.now();
+function mockLoop(now) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  updateMockPose(dt);
+  generateMockScan();
+  requestAnimationFrame(mockLoop);
+}
+requestAnimationFrame(mockLoop);
+</script>
+</body>
+</html>

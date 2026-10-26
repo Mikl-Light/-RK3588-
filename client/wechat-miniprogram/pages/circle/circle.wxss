@@ -1,0 +1,56 @@
+/* 绕圆页专有样式（公共部分见 app.wxss） */
+
+.map {
+  width: 100%;
+  height: 700rpx;
+  background: #fafafa;
+  border-radius: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.info-card.inner {
+  box-shadow: none;
+  padding: 0;
+  margin: 12rpx 0 4rpx;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.xy-input {
+  flex: 1;
+  min-width: 0;
+  height: 68rpx;
+  background: #f4f4f5;
+  border-radius: 12rpx;
+  padding: 0 16rpx;
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.mini-btn {
+  margin: 0;
+  padding: 0 20rpx;
+  height: 68rpx;
+  line-height: 68rpx;
+  font-size: 22rpx;
+  border-radius: 10rpx;
+  background: #eff6ff;
+  color: #1d4ed8;
+  flex-shrink: 0;
+}
+
+.mini-btn.wide {
+  padding: 0 16rpx;
+}
+
+.mini-btn:active { background: #dbeafe; }
+
+.banner.warn {
+  margin-top: 12rpx;
+  margin-bottom: 0;
+}

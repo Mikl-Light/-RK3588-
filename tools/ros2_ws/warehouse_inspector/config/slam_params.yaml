@@ -1,0 +1,44 @@
+# ============================================================================
+# warehouse_inspector — slam_toolbox 覆盖参数
+#
+# 用法：launch 里先加载 slam_toolbox 自带的 mapper_params_online_async.yaml，
+# 再用本文件覆盖关键项。这样既能继承官方一套完整参数，又只改我们需要改的，
+# 避免手写参数时漏项或写错名字（写错名字会被静默忽略）。
+#
+# 为什么用在线建图（mode: mapping）：
+#   当前阶段没有固定场地，在线建图不需要事先保存地图、也不需要人工给初始位姿，
+#   到场开机即可使用。代价是地图会随建图过程变化，因此必须配合：
+#     1) scan_filter 挡掉雷达自回波，否则幽灵像素会持续被写进地图；
+#     2) map_despeckle 清掉孤立占据像素，否则自由空间被切碎、窄处过不去。
+# ============================================================================
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: false
+    mode: mapping
+    map_frame: map
+    odom_frame: odom_fused        # 融合里程计（2026-10-22 起；原为 odom_laser 裸 rf2o）
+    base_frame: base_link
+    scan_topic: /scan             # 过滤后的激光
+
+    resolution: 0.05
+    max_laser_range: 12.0         # 传感器 range_max=16m，实测最远有效回波约 5.8m；
+                                  # 填 20（默认值）会引入大量无效远点
+
+    # --- 建图触发条件 ---
+    # 默认 0.5/0.5 在慢速巡检时会明显丢细节；调小让地图更连续
+    minimum_travel_distance: 0.15
+    minimum_travel_heading: 0.15
+    minimum_time_interval: 0.20
+
+    # --- 发布节奏 ---
+    # 默认 transform_publish_period 是 0.02(50Hz)，会大量重发同一时间戳，
+    # 既浪费算力又制造重复 stamp；odom 只有 10Hz，20Hz 足够 tf2 插值。
+    transform_publish_period: 0.05
+    map_update_interval: 2.0
+    transform_timeout: 0.40       # 里程计天生滞后一个扫描周期，容差要给够
+    tf_buffer_duration: 30.0
+
+    throttle_scans: 1
+    use_scan_matching: true
+    use_scan_barycenter: true
+    enable_interactive_mode: false

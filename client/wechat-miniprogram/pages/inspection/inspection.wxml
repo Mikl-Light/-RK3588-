@@ -1,0 +1,114 @@
+<view class="page">
+
+  <!-- 连接状态 -->
+  <view class="status-bar">
+    <view class="dot {{connected ? 'dot-on' : 'dot-off'}}"></view>
+    <text class="status-text">{{connected ? '已连接' : '未连接'}}</text>
+    <text class="addr">{{baseUrl}}</text>
+    <view class="chip chip-{{inspTone}}">{{inspText}}</view>
+  </view>
+
+  <!-- 进度 -->
+  <view class="panel">
+    <view class="panel-title-row">
+      <view class="panel-title">本轮进度</view>
+      <view class="chip chip-{{inspTone}}">{{inspProgress}}</view>
+    </view>
+    <view class="info-card inner">
+      <view class="info-row">
+        <text class="info-label">当前航点</text>
+        <text class="info-val">{{inspName || '—'}}</text>
+      </view>
+      <view class="info-row">
+        <text class="info-label">尝试次数</text>
+        <text class="info-val">{{inspAttemptText}}</text>
+      </view>
+      <view class="info-row" wx:if="{{inspWaitedText}}">
+        <text class="info-label">等待障碍</text>
+        <text class="info-val">{{inspWaitedText}}</text>
+      </view>
+      <view class="info-row">
+        <text class="info-label">航点来源</text>
+        <text class="info-val">{{wpSourceText}} · {{wpCount}} 个<text wx:if="{{wpFile}}"> ({{wpFile}})</text></text>
+      </view>
+      <view class="info-row" wx:if="{{inspNote}}">
+        <text class="info-label">说明</text>
+        <text class="info-val">{{inspNote}}</text>
+      </view>
+    </view>
+
+    <view class="btn-row">
+      <button class="btn btn-ok" bindtap="onStart" disabled="{{inspRunning || busy}}">开始巡检</button>
+      <button class="btn btn-warn" bindtap="onStop" disabled="{{!inspRunning || busy}}">停止</button>
+      <button class="btn btn-danger" bindtap="onClear" disabled="{{busy}}">清空航点</button>
+    </view>
+    <view class="note">「清空航点」只删 collected_waypoints.yaml；config/waypoints.yaml 不受影响。
+      停止请求是"软中止"，当前航点会走完收尾（停车 + 复位），稍等即可。</view>
+  </view>
+
+  <!-- 报告 -->
+  <view class="panel">
+    <view class="panel-title-row">
+      <view class="panel-title">最近一份报告</view>
+      <button class="mini-btn" size="mini" bindtap="onRefreshReport">刷新</button>
+    </view>
+
+    <view wx:if="{{report}}">
+      <view class="info-card inner">
+        <view class="info-row">
+          <text class="info-label">文件</text>
+          <text class="info-val">{{report.file}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">起止</text>
+          <text class="info-val">{{report.startedAt}} → {{report.finishedAt}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">耗时 / 结果</text>
+          <text class="info-val">{{report.duration}} · 成功 {{report.succeeded}}/{{report.total}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">走法 / 遇障</text>
+          <text class="info-val">{{report.segmentMode}} · {{report.onObstacle}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">等障碍统计</text>
+          <text class="info-val">{{report.waitsTotal}} 次 / {{report.waitsTime}}，清代价地图 {{report.costmapClears}} 次</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">中止原因</text>
+          <text class="info-val">{{report.aborted}}</text>
+        </view>
+      </view>
+
+      <view class="wp-list">
+        <view class="wp-row" wx:for="{{reportRows}}" wx:key="index">
+          <text class="wp-idx">{{item.index}}</text>
+          <text class="wp-name {{item.ok ? 'ok' : 'bad'}}">{{item.name}}</text>
+          <text class="wp-meta">{{item.mark}} · {{item.status}} · {{item.duration}}<text wx:if="{{item.obstacle}}"> · 等 {{item.obstacle}}</text></text>
+        </view>
+      </view>
+    </view>
+
+    <view class="empty" wx:elif="{{reportBusy}}">加载中…</view>
+    <view class="empty" wx:else>{{reportMsg || '还没有报告（跑完一轮后自动生成 report_*.json）'}}</view>
+  </view>
+
+  <!-- 照片 -->
+  <view class="panel">
+    <view class="panel-title-row">
+      <view class="panel-title">巡检照片（{{photoCount}}）</view>
+      <button class="mini-btn" size="mini" bindtap="onRefreshPhotos">刷新</button>
+    </view>
+    <view class="photo-grid" wx:if="{{photos.length}}">
+      <view class="photo-cell" wx:for="{{photos}}" wx:key="name"
+            data-index="{{index}}" bindtap="onPhotoTap">
+        <image class="photo" src="{{item.url}}" mode="aspectFill" lazy-load="{{true}}" />
+        <text class="photo-name">{{item.name}}</text>
+        <text class="photo-meta">{{item.mtime}} · {{item.size}}</text>
+      </view>
+    </view>
+    <view class="empty" wx:else>还没有照片（相机需 start_camera:=true 才会拍）</view>
+  </view>
+
+</view>

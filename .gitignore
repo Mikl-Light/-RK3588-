@@ -1,0 +1,24 @@
+# 构建产物（可重新生成，不入库）
+build*/
+*/build/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# CMake 临时
+mx.scratch
+CMakeFiles/
+CMakeCache.txt
+
+# 编辑器 / IDE 本地状态
+.vscode/
+.settings/
+.reasonix/
+.workbuddy/
+*.code-workspace
+
+# 系统垃圾
+Thumbs.db
+desktop.ini
+.DS_Store

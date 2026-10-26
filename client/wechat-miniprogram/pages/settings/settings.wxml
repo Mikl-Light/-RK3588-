@@ -1,0 +1,60 @@
+<view class="page">
+
+  <!-- 后端配置 -->
+  <view class="panel">
+    <view class="panel-title">后端连接（inspector_web 桥）</view>
+    <view class="field">
+      <text class="label">机器人 IP / 主机名</text>
+      <input class="input" placeholder="如 192.168.1.100" value="{{ip}}" bindinput="onIpInput" />
+    </view>
+    <view class="field">
+      <text class="label">端口</text>
+      <input class="input" type="number" placeholder="8765" value="{{port}}" bindinput="onPortInput" />
+    </view>
+    <view class="field">
+      <text class="label">遥测轮询 (ms)</text>
+      <input class="input" type="number" placeholder="500" value="{{pollInterval}}" bindinput="onPollInput" />
+    </view>
+    <view class="note">轮询别低于 200 ms：桥是单进程 Python，轮询太密会拖慢其它请求。</view>
+  </view>
+
+  <!-- 默认速度 -->
+  <view class="panel">
+    <view class="panel-title">默认速度（上限对齐后端限幅）</view>
+    <view class="field">
+      <text class="label">线速度 (m/s)</text>
+      <input class="input" type="digit" placeholder="0.3" value="{{linearSpeed}}" bindinput="onLinearInput" />
+    </view>
+    <view class="field">
+      <text class="label">旋转速度 (rad/s)</text>
+      <input class="input" type="digit" placeholder="1.0" value="{{rotationSpeed}}" bindinput="onRotationInput" />
+    </view>
+    <view class="note">桥的限幅：Vx/Vy ≤ {{limits.vx}} m/s，Wz ≤ {{limits.wz}} rad/s。超出的值会被后端夹掉。</view>
+  </view>
+
+  <!-- 操作 -->
+  <view class="btn-row">
+    <button class="btn btn-primary" bindtap="onTest" disabled="{{busy}}">{{busy ? '测试中…' : '连接测试'}}</button>
+    <button class="btn btn-ok" bindtap="onSave">保存配置</button>
+  </view>
+  <view class="btn-row">
+    <button class="btn" bindtap="onCopyUrl">复制调试页地址</button>
+    <button class="btn" bindtap="onReset">恢复默认</button>
+    <button class="btn btn-danger" bindtap="onClearCache">清除配置</button>
+  </view>
+
+  <!-- 测试结果 -->
+  <view class="test-result {{testOk ? 'ok' : ''}}" wx:if="{{testResult}}">{{testResult}}</view>
+
+  <!-- 说明 -->
+  <view class="help">
+    <view class="help-title">使用说明</view>
+    <view class="help-line">1. 机器人上先起现场栈：ros2 launch warehouse_inspector inspection.launch.py</view>
+    <view class="help-line">2. 再起手机端出口：ros2 launch inspector_web web.launch.py（端口 8765）</view>
+    <view class="help-line">3. 手机与机器人需在同一局域网，或都连上 Tailscale。</view>
+    <view class="help-line">4. 开发者工具：详情 → 本地设置 → 勾选「不校验合法域名」；真机调试需开调试模式。</view>
+    <view class="help-line">5. 安全：松开摇杆/横移按钮即停车；紧急情况点遥控页红色 STOP。</view>
+    <view class="help-line">6. 本桥只发 /cmd_vel，不打开串口；串口归 warehouse_inspector 的 chassis_bridge。</view>
+  </view>
+
+</view>

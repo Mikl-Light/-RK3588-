@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mecanum_bringup</name>
+  <version>0.1.0</version>
+  <description>STM32F407 麦轮小车 ROS2 上位机: 串口桥 + 键盘遥控</description>
+  <maintainer email="dev@example.com">dev</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <!-- 键盘节点需要系统包 python3-evdev (apt 安装, 非 rosdep 管理) -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

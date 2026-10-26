@@ -1,0 +1,240 @@
+# ============================================================================
+# warehouse_inspector — Nav2 参数
+#
+# 坐标系（本车最要命的一条约定）：
+#     map ──slam_toolbox──> odom_fused ──fusion_node──> base_link ──static──> laser
+#
+# 2026-10-22 变更：里程计坐标系由 `odom_laser`（rf2o 裸激光）换成 `odom_fused`
+#   （rf2o + 固件轮式/磁航向 的融合输出）。TF `odom_fused -> base_link` 由
+#   fusion_node 发布，rf2o 的 publish_tf 已关闭（否则 base_link 有两个父节点）。
+#   实测依据：直线行驶 yaw 偏差 −0.37°、含停车段 +0.09°（未融合的 /odom 单独是 −7.99°）。
+#
+# ⚠ 本车**没有 `odom` 这个坐标系**（ROS 默认名）。Nav2 里多个节点的坐标系参数
+#   **默认值就是 `odom`**，必须逐个显式写死：
+#     - behavior_server.local_frame  默认 `odom`  -> Spin/BackUp 全部失败
+#     - behavior_server.global_frame 默认 `map`   -> 恰好可用，但仍显式写
+#     - local_costmap.global_frame   默认 `odom`  -> 必须写成 odom_fused
+#   漏掉任何一个，都会表现为「功能时好时坏」且日志里只提一句
+#   `target frame "odom" ... does not exist`，极难定位。
+#   以后再接新的 Nav2 插件，先 `ros2 param get <node> global_frame / local_frame` 确认一遍。
+# ============================================================================
+
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 10.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.4            # 目标点容差（米）
+      use_astar: true           # 狭窄空间里 A* 比 Dijkstra 收敛快，减少规划超时
+      allow_unknown: true       # 在线建图必有未知区，false 会让规划频繁无解
+      max_planning_time: 5.0
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 15.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    # 控制环在实际算力下会掉到 6~12Hz；0.3s 时两三次瞬时碰撞判断就直接放弃目标
+    failure_tolerance: 1.0
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugin: "goal_checker"
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      # 狭窄空间里 RPP 可能原地转很久来对朝向，位移很小。
+      # 阈值取 0.05m 才不会被误判为"卡住"。
+      required_movement_radius: 0.05
+      movement_time_allowance: 20.0
+
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.20   # 航点拍照要求位置准一些
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.25          # 巡检场景求稳，不求快
+      # --- 前视距离：狭窄空间的关键，短前视才能贴着路径走 ---
+      lookahead_dist: 0.55
+      min_lookahead_dist: 0.25
+      max_lookahead_dist: 0.90
+      lookahead_time: 1.2
+      use_velocity_scaled_lookahead_dist: true
+      min_approach_linear_velocity: 0.08
+      # --- 朝向 ---
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.40
+      # 2026-09-13 用户要求：原地转向加快到 1.5 倍（1.0 -> 1.5）。
+      # ⚠ max_angular_accel 必须同步提高（3.0 -> 4.5），否则角加速度上限会把
+      #   实际转向速度压在 1.0 rad/s 附近，设了 1.5 也到不了。
+      rotate_to_heading_angular_vel: 1.5
+      max_angular_accel: 4.5
+      # --- 允许沿路径倒退 ---
+      # 狭窄走廊里"路径方向与车头差 90° 以上"是常态，允许倒退比强行掉头靠谱得多。
+      # 若你希望机器人永远头朝前运动，改成 false（代价是窄处容易卡）。
+      allow_reversing: true
+      # --- 碰撞检测 ---
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      use_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 0.60
+      regulated_linear_scaling_min_speed: 0.10
+      cost_scaling_dist: 0.30
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 3.0
+      # --- TF ---
+      # 本车里程计来自激光扫描匹配，**天生滞后约一个扫描周期(0.1s)**，
+      # 再叠加算力紧张时的抖动，容差必须放宽。0.2 会频繁报
+      # "extrapolation into the future" 并中止 follow_path。
+      transform_tolerance: 0.50
+      max_robot_pose_search_dist: 10.0
+      use_interpolation: true
+
+# ============================================================================
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      robot_base_frame: base_link
+      global_frame: odom_fused        # ⚠ 不是默认的 odom
+      transform_tolerance: 0.50
+      rolling_window: true
+      width: 4                        # 4m 窗口；RPP 前视最大 0.9m，留足余量
+      height: 4
+      resolution: 0.05
+      # ⚠ 尺寸必须按**含轮最宽处**实测填写，不要照抄底盘标称尺寸。
+      #   内切半径 = 半宽（+padding），它直接决定"硬阻挡带"有多宽，
+      #   填大了会把可通行空间啃掉一大圈，窄处直接过不去。
+      #   本包默认 0.32 x 0.20m，请你用卡尺量完再改。
+      footprint: "[[-0.16, -0.10], [-0.16, 0.10], [0.16, 0.10], [0.16, -0.10]]"
+      footprint_padding: 0.0          # 余量交给膨胀层，不在足迹上重复留
+      robot_radius: 0.19              # 外接半径 sqrt(0.16^2+0.10^2)，仅作 footprint 失效时的回退
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        # 这一项**必须写在 obstacle_layer 之下**，写在 costmap 顶层会被静默忽略
+        # （表现为 ros2 param get 返回 "Parameter not set"）
+        footprint_clearing_enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan                  # 注意：是 scan_filter 过滤后的
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+          obstacle_min_range: 0.20      # 真正的近距自回波已由 scan_filter 挡掉
+          obstacle_max_range: 4.0
+          raytrace_min_range: 0.0       # 清除射线从 0 开始，才能擦掉车边的假障碍
+          raytrace_max_range: 4.5
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # 外接半径 0.189m；0.22 只留约 3cm 余量，窄处能过但贴边。
+        # 若实车擦碰 -> 提到 0.25~0.28；若窄处过不去 -> 优先清洗地图而不是继续压这个值。
+        inflation_radius: 0.22
+        # 值越大软代价衰减越快、膨胀裙边越"紧"、可用空间越多。
+        # 注意方向：**调大**才收紧，调小反而让裙边更满更宽。
+        cost_scaling_factor: 5.0
+
+      always_send_full_costmap: true
+      publish_frequency: 2.0
+      update_frequency: 5.0
+
+# ============================================================================
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      robot_base_frame: base_link
+      global_frame: map
+      transform_tolerance: 0.50
+      resolution: 0.05
+      width: 30                       # 显式指定；不写的话默认 5x5m，
+      height: 30                      # 一旦静态层没及时到位就会塌缩成 5x5 导致全面失败
+      footprint: "[[-0.16, -0.10], [-0.16, 0.10], [0.16, 0.10], [0.16, -0.10]]"
+      footprint_padding: 0.0
+      robot_radius: 0.19
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+          obstacle_min_range: 0.20
+          obstacle_max_range: 4.0
+          raytrace_min_range: 0.0
+          raytrace_max_range: 4.5
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.22
+        cost_scaling_factor: 5.0
+
+      always_send_full_costmap: true
+      publish_frequency: 1.0
+      update_frequency: 3.0
+
+# ============================================================================
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom_fused          # ⚠ 不是 /odom，也不是 /odom_laser
+    bt_loop_duration: 10
+    default_bt_xml_filename: "navigate_to_pose_w_replanning_and_recovery.xml"
+
+# ============================================================================
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    # ★★ 本文件最容易被漏掉的一处 ★★
+    #   local_frame 的默认值是 "odom"，而本车没有这个坐标系。
+    #   Spin / BackUp 用它做位姿查询与碰撞检测，查不到就立刻
+    #   "Initial/Current robot pose is not available" -> 恢复行为 100% 失效。
+    #   后果：机器人一旦卡住（前方有障碍 + 不许倒车）就永远出不来。
+    global_frame: map
+    local_frame: odom_fused
+    robot_base_frame: base_link
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    recovery_plugins: ["spin", "backup", "wait"]
+
+    spin:
+      plugin: "nav2_behaviors::Spin"
+      simulate_ahead_time: 2.0
+      max_rotational_vel: 1.0
+      min_rotational_vel: 0.4
+      rotational_acc_lim: 3.0
+
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+      simulate_ahead_time: 2.0
+      max_vel_x: -0.12              # 后退速度（负值），窄处慢一点
+      min_vel_x: -0.12
+      acc_lim_x: 1.5
+
+    wait:
+      plugin: "nav2_behaviors::Wait"
+      simulate_ahead_time: 1.0
+      time: 5.0

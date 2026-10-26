@@ -1,0 +1,356 @@
+/* 全局样式 —— 公共设计系统（各页面只写自己特有的规则，避免五份重复） */
+
+page {
+  background: #f4f4f5;
+  font-size: 28rpx;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+button::after {
+  border: none;
+}
+
+button {
+  margin: 0;
+}
+
+.page {
+  padding: 20rpx 24rpx 40rpx;
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------- 状态栏 */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 14rpx 20rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  margin-right: 12rpx;
+  flex-shrink: 0;
+}
+
+.dot-on {
+  background: #22c55e;
+  box-shadow: 0 0 8rpx rgba(34, 197, 94, 0.6);
+}
+
+.dot-off {
+  background: #ef4444;
+  box-shadow: 0 0 8rpx rgba(239, 68, 68, 0.5);
+}
+
+.status-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.addr {
+  font-size: 22rpx;
+  color: #6b7280;
+}
+
+/* 小徽章（底盘状态 / 数据来源 / 状态色调） */
+.chip {
+  font-size: 22rpx;
+  font-weight: 600;
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+  margin-left: 12rpx;
+  white-space: nowrap;
+}
+
+.chip-info { background: #dbeafe; color: #1d4ed8; }
+.chip-warn { background: #fef3c7; color: #b45309; }
+.chip-err  { background: #fee2e2; color: #b91c1c; }
+.chip-ok   { background: #dcfce7; color: #15803d; }
+.chip-idle { background: #e5e7eb; color: #4b5563; }
+
+/* 顶部提示条 */
+.banner {
+  background: #fef3c7;
+  border-left: 8rpx solid #f59e0b;
+  border-radius: 12rpx;
+  padding: 14rpx 18rpx;
+  margin-bottom: 16rpx;
+}
+
+.banner-text {
+  font-size: 24rpx;
+  color: #92400e;
+}
+
+/* ---------------------------------------------------------- 卡片 / 面板 */
+
+.panel {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.panel-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.panel-title-row .panel-title {
+  margin-bottom: 0;
+  margin-right: auto;
+}
+
+/* 六宫格遥测 */
+.telem-card {
+  display: flex;
+  flex-wrap: wrap;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 8rpx 12rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.cell {
+  width: 33.33%;
+  display: flex;
+  flex-direction: column;
+  padding: 10rpx 8rpx;
+  box-sizing: border-box;
+}
+
+.k {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.v {
+  font-size: 30rpx;
+  font-weight: 600;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.v-sub {
+  font-size: 22rpx;
+  font-weight: 400;
+  color: #6b7280;
+}
+
+/* 键值行 */
+.info-card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 8rpx 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.info-row {
+  display: flex;
+  align-items: baseline;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #f3f4f6;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  width: 170rpx;
+  font-size: 24rpx;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.info-val {
+  flex: 1;
+  font-size: 24rpx;
+  color: #111827;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* 说明文字 */
+.note {
+  font-size: 22rpx;
+  color: #9ca3af;
+  margin-top: 8rpx;
+}
+
+.hint-line {
+  font-size: 22rpx;
+  color: #6b7280;
+  padding: 0 8rpx 12rpx;
+}
+
+/* ---------------------------------------------------------- 表单 */
+
+.field {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid #f3f4f6;
+}
+
+.field:last-child {
+  border-bottom: none;
+}
+
+.label {
+  width: 220rpx;
+  font-size: 26rpx;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+.input {
+  flex: 1;
+  height: 68rpx;
+  background: #f4f4f5;
+  border-radius: 12rpx;
+  padding: 0 20rpx;
+  font-size: 26rpx;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------- 按钮 */
+
+.btn-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20rpx;
+  padding: 8rpx 0 20rpx;
+}
+
+.btn {
+  flex: 1;
+  height: 76rpx;
+  line-height: 76rpx;
+  padding: 0;
+  font-size: 26rpx;
+  border-radius: 14rpx;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.btn:active { background: #d1d5db; }
+
+.btn-primary { background: #3b82f6; color: #ffffff; }
+.btn-primary:active { background: #2563eb; }
+
+.btn-ok { background: #22c55e; color: #ffffff; }
+.btn-ok:active { background: #16a34a; }
+
+.btn-danger { background: #ef4444; color: #ffffff; }
+.btn-danger:active { background: #dc2626; }
+
+.btn-warn { background: #f59e0b; color: #ffffff; }
+.btn-warn:active { background: #d97706; }
+
+.btn[disabled] {
+  background: #e5e7eb;
+  color: #9ca3af;
+}
+
+/* 网格按钮 */
+.quick-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.quick-btn {
+  width: 190rpx;
+  padding: 0 10rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  font-size: 24rpx;
+  border-radius: 12rpx;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.quick-btn:active { background: #dbeafe; }
+
+/* 滑杆行 */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.slider-label {
+  width: 90rpx;
+  font-size: 24rpx;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+.slider {
+  flex: 1;
+}
+
+.slider-val {
+  width: 150rpx;
+  text-align: right;
+  font-size: 24rpx;
+  color: #6b7280;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+/* 帮助块 */
+.help {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.help-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  margin-bottom: 10rpx;
+}
+
+.help-line {
+  font-size: 23rpx;
+  color: #6b7280;
+  line-height: 1.7;
+}
+
+/* 测试结果条 */
+.test-result {
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.test-result.ok {
+  background: #dcfce7;
+  color: #15803d;
+}

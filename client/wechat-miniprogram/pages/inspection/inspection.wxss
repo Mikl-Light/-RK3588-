@@ -1,0 +1,98 @@
+/* 巡检页专有样式（公共部分见 app.wxss） */
+
+/* 面板内嵌的信息卡：去掉卡片自身的白底/阴影，避免"卡中卡" */
+.info-card.inner {
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 12rpx;
+}
+
+.mini-btn {
+  margin: 0;
+  padding: 0 20rpx;
+  height: 52rpx;
+  line-height: 52rpx;
+  font-size: 22rpx;
+  border-radius: 10rpx;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.mini-btn:active { background: #dbeafe; }
+
+/* 报告里的航点明细 */
+.wp-list {
+  margin-top: 8rpx;
+}
+
+.wp-row {
+  display: flex;
+  align-items: baseline;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid #f3f4f6;
+}
+
+.wp-row:last-child { border-bottom: none; }
+
+.wp-idx {
+  width: 44rpx;
+  font-size: 22rpx;
+  color: #9ca3af;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.wp-name {
+  width: 130rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.wp-name.ok { color: #15803d; }
+.wp-name.bad { color: #b91c1c; }
+
+.wp-meta {
+  flex: 1;
+  font-size: 22rpx;
+  color: #6b7280;
+  word-break: break-all;
+}
+
+/* 照片墙 */
+.photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.photo-cell {
+  width: 220rpx;
+}
+
+.photo {
+  width: 220rpx;
+  height: 160rpx;
+  background: #f3f4f6;
+  border-radius: 12rpx;
+}
+
+.photo-name {
+  display: block;
+  font-size: 20rpx;
+  color: #374151;
+  margin-top: 6rpx;
+  word-break: break-all;
+}
+
+.photo-meta {
+  display: block;
+  font-size: 19rpx;
+  color: #9ca3af;
+}
+
+.empty {
+  font-size: 24rpx;
+  color: #9ca3af;
+  padding: 16rpx 0;
+}

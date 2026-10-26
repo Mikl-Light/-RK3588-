@@ -1,0 +1,46 @@
+{
+  "pages": [
+    "pages/control/control",
+    "pages/telemetry/telemetry",
+    "pages/inspection/inspection",
+    "pages/circle/circle",
+    "pages/settings/settings"
+  ],
+  "window": {
+    "backgroundColor": "#f4f4f5",
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#1f2937",
+    "navigationBarTitleText": "麦轮巡检车",
+    "navigationBarTextStyle": "white"
+  },
+  "tabBar": {
+    "color": "#9ca3af",
+    "selectedColor": "#3b82f6",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/control/control",
+        "text": "遥控"
+      },
+      {
+        "pagePath": "pages/telemetry/telemetry",
+        "text": "遥测"
+      },
+      {
+        "pagePath": "pages/inspection/inspection",
+        "text": "巡检"
+      },
+      {
+        "pagePath": "pages/circle/circle",
+        "text": "绕圆"
+      },
+      {
+        "pagePath": "pages/settings/settings",
+        "text": "设置"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

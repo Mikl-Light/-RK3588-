@@ -1,0 +1,101 @@
+<view class="page">
+
+  <!-- 连接状态 -->
+  <view class="status-bar">
+    <view class="dot {{connected ? 'dot-on' : 'dot-off'}}"></view>
+    <text class="status-text">{{connected ? '已连接' : '未连接'}}</text>
+    <text class="addr">{{baseUrl}}</text>
+    <view class="chip chip-{{inspTone}}">{{inspText}}</view>
+  </view>
+
+  <!-- 位姿 -->
+  <view class="telem-card">
+    <view class="cell">
+      <text class="k">X (m)</text>
+      <text class="v">{{x}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">Y (m)</text>
+      <text class="v">{{y}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">航向（罗盘）</text>
+      <text class="v">{{headingText}} <text class="v-sub">{{sector}}</text></text>
+    </view>
+    <view class="cell">
+      <text class="k">Vx (m/s)</text>
+      <text class="v">{{vx}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">Vy (m/s)</text>
+      <text class="v">{{vy}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">Wz (rad/s)</text>
+      <text class="v">{{wz}}</text>
+    </view>
+  </view>
+
+  <!-- 地图 -->
+  <view class="panel">
+    <view class="panel-title-row">
+      <view class="panel-title">地图（{{mapText}}）</view>
+      <view class="chip chip-idle">{{trajText}}</view>
+    </view>
+    <canvas type="2d" id="map" class="map"></canvas>
+    <view class="legend">
+      <text class="lg lg-traj">■ 轨迹</text>
+      <text class="lg lg-pose">■ 当前位置</text>
+      <text class="lg lg-wp">■ 航点</text>
+      <text class="lg lg-circle">■ 圆</text>
+    </view>
+    <view class="note">灰色底图来自 /map.png（SLAM 实时地图）。没有地图时画布会自动缩放到轨迹范围。</view>
+  </view>
+
+  <!-- 环境 -->
+  <view class="info-card">
+    <view class="info-row">
+      <text class="info-label">位姿来源</text>
+      <text class="info-val">{{poseSource}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">雷达</text>
+      <text class="info-val {{scanOk ? '' : 'bad'}}">{{scanText}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">底盘</text>
+      <text class="info-val">{{chassisText}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">相机</text>
+      <text class="info-val {{cameraOk ? '' : 'bad'}}">{{cameraText}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">航点</text>
+      <text class="info-val">{{wpText}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">照片</text>
+      <text class="info-val">{{photoText}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">圆形</text>
+      <text class="info-val">{{circleStateText}} · {{circleText}}</text>
+    </view>
+  </view>
+
+  <!-- 相机预览 -->
+  <view class="panel">
+    <view class="panel-title-row">
+      <view class="panel-title">相机预览</view>
+      <switch checked="{{showCamera}}" bindchange="onToggleCamera" color="#3b82f6" />
+    </view>
+    <image wx:if="{{showCamera}}" class="cam" src="{{camUrl}}" mode="aspectFit" binderror="onCamError" />
+    <view class="note" wx:else>关闭时不会下载画面（省流量）。相机需以 start_camera:=true 启动才有图。</view>
+  </view>
+
+  <view class="btn-row">
+    <button class="btn" bindtap="onReset">立即刷新</button>
+  </view>
+
+</view>

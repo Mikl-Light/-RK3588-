@@ -1,0 +1,335 @@
+/**
+  ******************************************************************************
+  * @file    ahrs.c
+  * @brief   航向姿态参考系统实现
+  *          互补滤波: 陀螺仪(短期准) + 磁力计(长期准,绝对方向)
+  *          滤波系数 0.98 表示: 98% 信任陀螺仪积分, 2% 信任磁力计修正
+  ******************************************************************************
+  */
+#include "ahrs.h"
+#include "debug.h"
+#include "mpu9250.h"
+#include <math.h>
+#include <stdbool.h>
+
+/* -------------------------------------------------------------------------- */
+/* 配置                                                                       */
+/* -------------------------------------------------------------------------- */
+#define AHRS_ALPHA       0.98f        /**< 互补滤波系数 (越接近1越信陀螺仪) */
+#define MAG_DECLINATION  0.0f         /**< 磁偏角 (度), 北京约 -7°, 可根据所在地修改 */
+
+/* -------------------------------------------------------------------------- */
+/* ZARU 零速零偏再估计 (2026-08-18)                                            */
+/*   原理: 车静止时 (编码器全零) 陀螺读数≈当前真实零偏; 慢速低通把            */
+/*         gyro_z_offset 拉向实测值 → 消除开机校准后零偏漂移 (HDG 匀速漂)     */
+/*   门控: 静止≥1s 且 |残余角速度|≤3°/s, 防止把真实旋转误当零偏               */
+/* -------------------------------------------------------------------------- */
+#define ZARU_SETTLE_MS        1000u   /**< 静止持续多久后开始校正 (ms) */
+#define ZARU_TAU_S            2.0f    /**< 零偏校正时间常数 (s), 越小收敛越快 */
+#define ZARU_MAX_RESIDUAL_DPS 8.0f    /**< 仅当 |残余角速度|≤此值才校正 (°/s) */
+#define ZARU_MAX_OFFSET_DPS   10.0f   /**< 零偏限幅 (°/s), 防异常值拉飞 */
+
+/* -------------------------------------------------------------------------- */
+/* 航向计算直接用 libm 的 atan2f (CMake 已链接 -lm, F407 硬浮点)              */
+/* 注: 旧版自写 FastAtan 在 |x|>1 且 x<0 时符号处理错误, 误差最大 ~85°,      */
+/*     导致磁航向在部分象限严重偏置 — 已废弃 (2026-08-10 修复)                   */
+/* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/* 磁力计航向 (考虑 IMU 安装旋转)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief IMU 水平面内旋转 90° (xy 交换) 后的磁航向计算
+ * @note  2026-08-12 硬件变更: IMU 绕 z 转了 90°, 磁力计 x/y 分量需换轴
+ *        顺时针 90° (IMU x→车体y): 车体系磁分量 (北,东) = (my, -mx)
+ *        逆时针 90° (IMU x→车体-y): 车体系磁分量 (北,东) = (-my, mx)
+ *        若换轴后航向差 180° 或 90°, 调整本函数符号
+ */
+static float MagHeadingDeg(float mx, float my)
+{
+#if 1   /* 1=顺时针90°: (北,东)=(my,-mx); 0=逆时针90°: (北,东)=(-my,mx) */
+    float north = my;
+    float east  = -mx;
+#else
+    float north = -my;
+    float east  = mx;
+#endif
+    float deg = atan2f(east, north) * 57.29578f;
+    if (deg < 0.0f) deg += 360.0f;
+    return deg;
+}
+
+
+/* 供可靠里程计 EKF 直接调用：由磁力计水平分量计算磁航向 (度)
+ * 与 AHRS 互补滤波使用的磁航向保持一致，包含磁偏角修正 */
+float AHRS_ComputeMagHeadingDeg(float mx, float my)
+{
+    float deg = MagHeadingDeg(mx, my) + MAG_DECLINATION;
+    if (deg < 0.0f) deg += 360.0f;
+    if (deg >= 360.0f) deg -= 360.0f;
+    return deg;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 内部变量                                                                   */
+/* -------------------------------------------------------------------------- */
+static float yaw_deg = 0.0f;          /**< 当前融合航向角 */
+static float gyro_z_offset = 0.0f;    /**< 陀螺仪零偏 */
+static bool  mag_fusion_enabled = false; /**< 磁力计融合开关 (默认关: 纯陀螺) */
+
+/* ZARU 零速零偏再估计状态 (2026-08-18) */
+static bool     stationary = false;          /**< 当前是否静止 (由 main 循环按编码器判定) */
+static uint32_t stationary_since_ms = 0;      /**< 进入静止状态的时刻 (ms) */
+
+/* I2C 故障容错 (电机运行时 I2C 易受 EMI 干扰, 不可阻塞主循环) */
+static uint32_t i2c_fail_cnt = 0;     /**< 连续 I2C 失败次数 */
+#define I2C_FAIL_THRESHOLD  5         /**< 连续失败超过此次数后降级: 纯陀螺仪积分 */
+#define I2C_RETRY_INTERVAL  10        /**< 降级时每 N 个周期尝试恢复 I2C 通讯 */
+
+/* -------------------------------------------------------------------------- */
+/* 初始化                                                                     */
+/* -------------------------------------------------------------------------- */
+void AHRS_Init(void)
+{
+    yaw_deg = 0.0f;
+    gyro_z_offset = 0.0f;
+
+    /* 磁力计融合默认关闭: 电机磁场干扰/磁轴未标定时, 纯陀螺积分更稳
+     * (lidar SLAM 建图时 yaw 漂移由激光 scan matching 兜底) */
+    mag_fusion_enabled = false;
+
+    /* 加载 MPU9250 校准数据（在 main.c 中已完成校准） */
+    const MPU9250_Calib *c = MPU9250_GetCalibration();
+    if (c != NULL) {
+        gyro_z_offset = c->gyro_offset_z;
+        DBG_DEBUG(TAG_AHRS, "Loaded gyro Z offset: %.3f dps", gyro_z_offset);
+    } else {
+        DBG_WARN(TAG_AHRS, "No MPU9250 calibration data, gyro offset = 0");
+    }
+
+    if (mag_fusion_enabled) {
+        /* 首次用磁力计初始化航向 */
+        float mx, my, mz;
+        if (MPU9250_ReadMag(&mx, &my, &mz) == 0) {
+            /* IMU 已旋转 90°: 磁力计轴交换后计算 (见 MagHeadingDeg) */
+            float mag_deg = MagHeadingDeg(mx, my);
+            yaw_deg = mag_deg;
+            DBG_INFO(TAG_AHRS, "Initial heading from magnetometer: %.1f°", yaw_deg);
+        } else {
+            DBG_WARN(TAG_AHRS, "Magnetometer read failed, initial heading = 0°");
+        }
+    } else {
+        DBG_INFO(TAG_AHRS, "Mag fusion OFF: yaw starts at 0° (gyro only)");
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 更新航向 (互补滤波) — 带 I2C 故障容错                                      */
+/* -------------------------------------------------------------------------- */
+void AHRS_Update(float dt)
+{
+    if (dt <= 0.0f) return;
+
+    /* ====== 1. 读陀螺仪 Z 轴角速度 (快速通道, 仅 6 字节 I2C) ====== */
+    float gx, gy, gz;
+    if (MPU9250_ReadGyro(&gx, &gy, &gz) != 0) {
+        /* 陀螺仪读取失败 → 保持上次航向, 跳过本周期, 不阻塞主循环 */
+        i2c_fail_cnt++;
+        /* 节流打印 (每 1s 一次): 定位 yaw 冻结问题 (2026-08-12 新增) */
+        static uint32_t last_warn_ms = 0;
+        uint32_t now_ms = HAL_GetTick();
+        if (now_ms - last_warn_ms > 1000U) {
+            last_warn_ms = now_ms;
+            DBG_WARN(TAG_AHRS, "Gyro read FAILED (%lu), yaw frozen!",
+                     (unsigned long)i2c_fail_cnt);
+        }
+        return;
+    }
+    float gz_raw = gz;    /* 原始值 (含零偏), ZARU 重估零偏用 */
+    gz -= gyro_z_offset;  /* 减去零偏 */
+
+    /* I2C 陀螺仪成功 → 清零失败计数 */
+    i2c_fail_cnt = 0;
+
+    /* ====== 2. 陀螺仪积分预测航向 ====== */
+    /* 陀螺仪 Z 轴正值 = 逆时针旋转 = 航向角增加 (右手定则) */
+    float gyro_yaw = yaw_deg + gz * dt;
+    /* 归一化到 0~360 */
+    while (gyro_yaw < 0.0f)    gyro_yaw += 360.0f;
+    while (gyro_yaw >= 360.0f) gyro_yaw -= 360.0f;
+
+    /* ====== 3. 读磁力计得到绝对航向 (失败时沿用陀螺仪预测值) ====== */
+    float mx, my, mz;
+    float mag_yaw = gyro_yaw;  /* 默认保持陀螺仪预测值 */
+    if (mag_fusion_enabled) {
+        if (MPU9250_ReadMag(&mx, &my, &mz) == 0) {
+            /* 磁力计航向 (IMU 旋转 90°, 轴已交换) */
+            mag_yaw = MagHeadingDeg(mx, my);
+            /* 修正磁偏角 */
+            mag_yaw += MAG_DECLINATION;
+            /* 归一化到 0~360 */
+            if (mag_yaw < 0.0f)    mag_yaw += 360.0f;
+            if (mag_yaw >= 360.0f) mag_yaw -= 360.0f;
+        }
+        /* 读取失败 → mag_yaw=gyro_yaw → 本周期纯陀螺 */
+    }
+    /* 融合关闭或读取失败 → 纯陀螺仪积分 (磁力计被电机干扰时更稳) */
+
+    /* ====== 4. 互补滤波融合 ====== */
+    /* 处理角度跨越 0°/360° 的问题 */
+    float diff = mag_yaw - gyro_yaw;
+    if (diff > 180.0f)       diff -= 360.0f;
+    else if (diff < -180.0f) diff += 360.0f;
+
+    /* 互补滤波: gyro 贡献 98%, mag 修正 2% */
+    yaw_deg = gyro_yaw + (1.0f - AHRS_ALPHA) * diff;
+
+    /* 归一化 */
+    while (yaw_deg < 0.0f)    yaw_deg += 360.0f;
+    while (yaw_deg >= 360.0f) yaw_deg -= 360.0f;
+
+    /* ====== 5. ZARU: 静止时慢速重估陀螺零偏 (2026-08-18) ====== */
+    /* 开机校准只采一次, 之后零偏随温度/热稳定漂移 → HDG 匀速漂移.   */
+    /* 车静止时陀螺读数≈当前真实零偏: 用慢速低通把 gyro_z_offset     */
+    /* 拉向实测值, 漂移自愈. 门控: 静止≥1s 且 |残余角速度|≤3°/s,    */
+    /* 防止把真实旋转误当零偏.                                       */
+    if (stationary) {
+        uint32_t now_ms = HAL_GetTick();
+        if (stationary_since_ms == 0) {
+            stationary_since_ms = now_ms;
+        }
+        if ((now_ms - stationary_since_ms) >= ZARU_SETTLE_MS &&
+            gz <= ZARU_MAX_RESIDUAL_DPS && gz >= -ZARU_MAX_RESIDUAL_DPS) {
+            /* 慢速低通: 时间常数 ZARU_TAU_S, 每周期走 dt/tau */
+            float k = dt / ZARU_TAU_S;
+            if (k > 0.1f) k = 0.1f;   /* dt 异常时防单次校正过大 */
+            gyro_z_offset += (gz_raw - gyro_z_offset) * k;
+
+            /* 限幅: 零偏超出 ±10°/s 视为异常, 停止跟随 */
+            if (gyro_z_offset >  ZARU_MAX_OFFSET_DPS) gyro_z_offset =  ZARU_MAX_OFFSET_DPS;
+            if (gyro_z_offset < -ZARU_MAX_OFFSET_DPS) gyro_z_offset = -ZARU_MAX_OFFSET_DPS;
+        }
+    } else {
+        stationary_since_ms = 0;   /* 运动中重置计时 */
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 获取当前航向                                                               */
+/* -------------------------------------------------------------------------- */
+float AHRS_GetHeading(void)
+{
+    return yaw_deg;
+}
+
+void AHRS_RecalibrateGyro(uint16_t samples)
+{
+    if (samples == 0) {
+        samples = 500;
+    }
+    if (samples > 5000) {
+        samples = 5000;
+    }
+
+    float sum = 0.0f;
+    uint16_t ok = 0;
+    for (uint16_t i = 0; i < samples; i++) {
+        float gx, gy, gz;
+        if (MPU9250_ReadGyro(&gx, &gy, &gz) == 0) {
+            sum += gz;
+            ok++;
+        }
+        HAL_Delay(1);
+    }
+
+    if (ok == 0) {
+        DBG_ERROR(TAG_AHRS, "GYROCAL failed: no gyro samples");
+        return;
+    }
+
+    float new_offset = sum / (float)ok;
+    gyro_z_offset = new_offset;
+    DBG_INFO(TAG_AHRS, "GYROCAL done: samples=%u, gyro_z_offset=%.3f dps",
+             (unsigned int)ok, (double)new_offset);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 获取完整数据                                                               */
+/* -------------------------------------------------------------------------- */
+void AHRS_GetData(AHRS_Data *data)
+{
+    if (data == NULL) return;
+    data->yaw = yaw_deg;
+
+    float mx, my, mz;
+    if (MPU9250_ReadMag(&mx, &my, &mz) == 0) {
+        float mag = MagHeadingDeg(mx, my);
+        data->mag_heading = mag;
+    }
+
+    float gx, gy, gz;
+    if (MPU9250_ReadGyro(&gx, &gy, &gz) == 0) {
+        data->gyro_z = gz - gyro_z_offset;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 计算两个角度之间的最短差值                                                 */
+/* -------------------------------------------------------------------------- */
+float AHRS_AngleDiff(float target, float current)
+{
+    float diff = target - current;
+
+    /* 处理角度环绕, 确保差值在 [-180, 180] */
+    while (diff > 180.0f)  diff -= 360.0f;
+    while (diff < -180.0f) diff += 360.0f;
+
+    return diff;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 外部航向覆盖 (可靠里程计 EKF 使用)                                         */
+/* -------------------------------------------------------------------------- */
+void AHRS_OverrideHeadingDeg(float heading_deg)
+{
+    while (heading_deg < 0.0f)    heading_deg += 360.0f;
+    while (heading_deg >= 360.0f) heading_deg -= 360.0f;
+    yaw_deg = heading_deg;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 磁力计融合开关                                                             */
+/* -------------------------------------------------------------------------- */
+void AHRS_SetMagFusion(bool enable)
+{
+    mag_fusion_enabled = enable;
+    if (enable) {
+        /* 开启时立即用磁力计重置航向 (消除陀螺累积漂移) */
+        float mx, my, mz;
+        if (MPU9250_ReadMag(&mx, &my, &mz) == 0) {
+            yaw_deg = MagHeadingDeg(mx, my);
+            DBG_INFO(TAG_AHRS, "Mag fusion ON, heading reset to %.1f°", yaw_deg);
+        } else {
+            DBG_WARN(TAG_AHRS, "Mag fusion ON but mag read failed");
+        }
+    } else {
+        DBG_INFO(TAG_AHRS, "Mag fusion OFF (gyro only)");
+    }
+}
+
+bool AHRS_IsMagFusionEnabled(void)
+{
+    return mag_fusion_enabled;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ZARU 零速零偏再估计: 静止状态通知 (2026-08-18)                              */
+/* -------------------------------------------------------------------------- */
+void AHRS_SetStationary(bool is_stationary)
+{
+    stationary = is_stationary;
+    if (!is_stationary) {
+        stationary_since_ms = 0;   /* 运动 → 重置静止计时 */
+    }
+}

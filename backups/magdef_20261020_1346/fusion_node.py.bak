@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+odom_fusion/fusion_node.py — 轮式 + 激光 + IMU 里程计融合节点
+
+核心思路（与用户讨论确定）：
+  1. 轮式 yaw 漂移的根源 = 陀螺零偏误差（一个恒定残差一直在积分累加）
+  2. 用激光里程计 yaw 作为"真值参考"，在特征丰富区在线估计这个零偏 b
+  3. 开阔区激光退化时，用估计出的 b 补偿轮式 yaw，靠陀螺+编码器撑住
+  4. 动态加权：特征区信激光（纠偏+防打滑），开阔区信轮式+陀螺（不退化）
+
+输入话题：
+  /odom              nav_msgs/Odometry   轮式里程计（STM32 EKF，50Hz）
+  /odom_laser        nav_msgs/Odometry   激光里程计（rf2o，20Hz）
+  /imu/imu407/data_raw  sensor_msgs/Imu  IMU 原始（gyro_z 角速度）
+  /scan               sensor_msgs/LaserScan  激光扫描（退化检测用）
+
+输出话题：
+  /odom_fused        nav_msgs/Odometry   融合后里程计（50Hz）
+  /fusion_diag       std_msgs/String     诊断 JSON（漂移率 b、权重 w、yaw 对比等）
+  TF: odom_fused -> base_link
+
+完全独立，不修改任何原有包。
+"""
+import json
+import math
+import time
+from collections import deque
+
+import rclpy
+from rclpy.node import Node
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu, LaserScan
+from geometry_msgs.msg import TransformStamped, Quaternion
+from std_msgs.msg import String
+from tf2_ros import TransformBroadcaster
+
+
+# ───────────────────────── 工具函数 ─────────────────────────
+
+def yaw_from_quat(q) -> float:
+    """从四元数提取 yaw (rad)。"""
+    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
+def quat_from_yaw(yaw: float) -> Quaternion:
+    """yaw (rad) -> 四元数。"""
+    q = Quaternion()
+    q.x = 0.0
+    q.y = 0.0
+    q.z = math.sin(yaw / 2.0)
+    q.w = math.cos(yaw / 2.0)
+    return q
+
+
+def wrap_pi(a: float) -> float:
+    """角度归一化到 [-pi, pi]。"""
+    while a > math.pi:
+        a -= 2.0 * math.pi
+    while a < -math.pi:
+        a += 2.0 * math.pi
+    return a
+
+
+def linreg_slope(points) -> float:
+    """
+    对 [(t, y), ...] 做最小二乘线性回归，返回斜率 dy/dt。
+    点数 < 2 时返回 0。
+    """
+    n = len(points)
+    if n < 2:
+        return 0.0
+    sx = sum(p[0] for p in points)
+    sy = sum(p[1] for p in points)
+    sxx = sum(p[0] * p[0] for p in points)
+    sxy = sum(p[0] * p[1] for p in points)
+    denom = n * sxx - sx * sx
+    if abs(denom) < 1e-12:
+        return 0.0
+    return (n * sxy - sx * sy) / denom
+
+
+# ───────────────────────── 融合节点 ─────────────────────────
+
+class OdomFusionNode(Node):
+    def __init__(self):
+        super().__init__('odom_fusion')
+
+        # ── 参数（可通过 launch 覆盖）──
+        self.declare_parameter('wheel_topic', '/odom')
+        self.declare_parameter('laser_topic', '/odom_laser')
+        self.declare_parameter('imu_topic', '/imu/imu407/data_raw')
+        self.declare_parameter('scan_topic', '/scan')
+        self.declare_parameter('out_topic', '/odom_fused')
+        self.declare_parameter('out_frame', 'odom_fused')
+        self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter('publish_tf', True)
+        # 退化检测
+        self.declare_parameter('scan_valid_ratio_threshold', 0.25)  # 有效点占比低于此值→激光退化
+        self.declare_parameter('laser_stale_sec', 0.5)               # 激光 odom 超过此时间未更新→退化
+        # 零偏估计
+        self.declare_parameter('bias_window_sec', 5.0)                # 滑动窗口长度
+        self.declare_parameter('bias_min_trust', 0.5)                 # 权重低于此值不估计零偏
+        self.declare_parameter('bias_jump_reject_rad', 0.3)          # 单帧 diff 跳变超过此值→丢弃（激光跳变），0.3rad≈17°
+        self.declare_parameter('bias_lowpass_alpha', 0.05)            # 零偏低通系数（越小越平滑）
+        # 融合
+        self.declare_parameter('laser_correction_gain', 0.1)          # 特征区激光 yaw 慢速修正增益
+        self.declare_parameter('trust_smoothing', 0.2)                 # 权重 w 低通系数
+
+        # ── 状态 ──
+        self.wheel_latest = None      # 最新轮式 odom
+        self.laser_latest = None      # 最新激光 odom
+        self.laser_stamp = 0.0        # 激光 odom 时间戳
+        self.gyro_z = 0.0             # 最新 IMU 角速度 z (rad/s)
+        self.scan_valid_ratio = 0.0   # 最新 scan 有效点占比
+
+        # 零偏估计
+        self.diff_window = deque()    # [(t, diff_rad), ...] 滑动窗口
+        self.b_smooth = 0.0           # 平滑后的零偏估计 (rad/s)
+        self.b_raw = 0.0              # 本次回归原始值
+        self.bias_samples = 0          # 累计有效估计次数
+        self.b_cumulative = 0.0        # 累计补偿量 (rad)，yaw_corrected = yaw_wheel - b_cumulative
+        self.last_bias_t = None        # 上次累计补偿的时间
+
+        # 权重
+        self.w_smooth = 0.0            # 平滑后的激光可信度 [0,1]
+
+        # 输出
+        self.out_seq = 0
+
+        # ── 订阅 ──
+        self.create_subscription(
+            Odometry, self.get_parameter('wheel_topic').value,
+            self._wheel_cb, 10)
+        self.create_subscription(
+            Odometry, self.get_parameter('laser_topic').value,
+            self._laser_cb, 10)
+        self.create_subscription(
+            Imu, self.get_parameter('imu_topic').value,
+            self._imu_cb, 10)
+        self.create_subscription(
+            LaserScan, self.get_parameter('scan_topic').value,
+            self._scan_cb, 10)
+
+        # ── 发布 ──
+        self.odom_pub = self.create_publisher(
+            Odometry, self.get_parameter('out_topic').value, 10)
+        self.diag_pub = self.create_publisher(String, '/fusion_diag', 10)
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+        self.get_logger().info(
+            'odom_fusion started: wheel=%s laser=%s imu=%s scan=%s -> %s'
+            % (self.get_parameter('wheel_topic').value,
+               self.get_parameter('laser_topic').value,
+               self.get_parameter('imu_topic').value,
+               self.get_parameter('scan_topic').value,
+               self.get_parameter('out_topic').value))
+
+    # ────────────── 回调 ──────────────
+
+    def _wheel_cb(self, msg: Odometry):
+        """轮式 odom 回调（50Hz）—— 触发融合输出。"""
+        self.wheel_latest = msg
+        self._fuse_and_publish()
+
+    def _laser_cb(self, msg: Odometry):
+        self.laser_latest = msg
+        self.laser_stamp = self._now_sec()
+
+    def _imu_cb(self, msg: Imu):
+        self.gyro_z = msg.angular_velocity.z
+
+    def _scan_cb(self, msg: LaserScan):
+        """退化检测：计算 scan 有效点占比。"""
+        total = len(msg.ranges)
+        if total == 0:
+            self.scan_valid_ratio = 0.0
+            return
+        valid = 0
+        for r in msg.ranges:
+            if math.isfinite(r) and msg.range_min <= r <= msg.range_max:
+                valid += 1
+        self.scan_valid_ratio = valid / total
+
+    # ────────────── 核心融合 ──────────────
+
+    def _now_sec(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    def _compute_trust(self) -> float:
+        """
+        计算激光可信度 w ∈ [0,1]。
+        两个条件同时满足才可信：
+          1. scan 有效点占比 >= 阈值（特征丰富）
+          2. 激光 odom 不陈旧（rf2o 在正常输出）
+        """
+        ratio_thresh = self.get_parameter('scan_valid_ratio_threshold').value
+        stale_sec = self.get_parameter('laser_stale_sec').value
+
+        ratio_ok = self.scan_valid_ratio >= ratio_thresh
+        fresh_ok = (self._now_sec() - self.laser_stamp) < stale_sec if self.laser_stamp > 0 else False
+
+        w = 1.0 if (ratio_ok and fresh_ok) else 0.0
+        # 低通平滑，避免抖动
+        alpha = self.get_parameter('trust_smoothing').value
+        self.w_smooth = self.w_smooth + alpha * (w - self.w_smooth)
+        return self.w_smooth
+
+    def _estimate_bias(self, t: float, yaw_wheel: float, yaw_laser: float, w: float):
+        """
+        在线估计陀螺零偏 b (rad/s)。
+        只在激光可信时（w >= bias_min_trust）采集 diff 样本，
+        用滑动窗口线性回归求斜率。
+        """
+        min_trust = self.get_parameter('bias_min_trust').value
+        if w < min_trust or self.laser_latest is None:
+            return
+
+        diff = wrap_pi(yaw_wheel - yaw_laser)
+
+        # 跳变剔除：与上一帧 diff 差过大 → 认为激光跳变，清空窗口重新采
+        jump_reject = self.get_parameter('bias_jump_reject_rad').value
+        if len(self.diff_window) > 0:
+            last_diff = self.diff_window[-1][1]
+            if abs(wrap_pi(diff - last_diff)) > jump_reject:
+                self.diff_window.clear()
+
+        self.diff_window.append((t, diff))
+
+        # 清理过期窗口
+        window_sec = self.get_parameter('bias_window_sec').value
+        while len(self.diff_window) > 0 and (t - self.diff_window[0][0]) > window_sec:
+            self.diff_window.popleft()
+
+        # 窗口足够长才回归（至少 2 秒数据）
+        if len(self.diff_window) >= 2 and (self.diff_window[-1][0] - self.diff_window[0][0]) > 1.0:
+            self.b_raw = linreg_slope(list(self.diff_window))
+            alpha = self.get_parameter('bias_lowpass_alpha').value
+            self.b_smooth = self.b_smooth + alpha * (self.b_raw - self.b_smooth)
+            self.bias_samples += 1
+
+    def _fuse_and_publish(self):
+        """融合并发布 /odom_fused + TF + diag。"""
+        if self.wheel_latest is None:
+            return
+
+        t = self._now_sec()
+        wheel = self.wheel_latest
+        yaw_wheel = yaw_from_quat(wheel.pose.pose.orientation)
+
+        # 1. 计算激光可信度
+        w = self._compute_trust()
+
+        # 2. 零偏估计（特征区）
+        yaw_laser = 0.0
+        if self.laser_latest is not None:
+            yaw_laser = yaw_from_quat(self.laser_latest.pose.pose.orientation)
+            self._estimate_bias(t, yaw_wheel, yaw_laser, w)
+
+        # 3. 累计补偿量（b_cumulative 是"已经漂了多少"，从估计开始累计）
+        if self.last_bias_t is not None:
+            dt = t - self.last_bias_t
+            if 0 < dt < 1.0:  # 防止时间跳变
+                self.b_cumulative += self.b_smooth * dt
+        self.last_bias_t = t
+
+        # 4. 补偿后轮式 yaw
+        yaw_wheel_corrected = wrap_pi(yaw_wheel - self.b_cumulative)
+
+        # 5. 融合 yaw：
+        #    特征区：用激光 yaw 慢速修正（correction_gain），避免跳变
+        #    开阔区：完全用补偿后的轮式 yaw
+        if w > 0.1 and self.laser_latest is not None:
+            gain = self.get_parameter('laser_correction_gain').value * w
+            yaw_err = wrap_pi(yaw_laser - yaw_wheel_corrected)
+            yaw_fused = wrap_pi(yaw_wheel_corrected + gain * yaw_err)
+        else:
+            yaw_fused = yaw_wheel_corrected
+
+        # 6. 融合位置：w * laser + (1-w) * wheel
+        if w > 0.1 and self.laser_latest is not None:
+            lp = self.laser_latest.pose.pose.position
+            wp = wheel.pose.pose.position
+            x_fused = w * lp.x + (1.0 - w) * wp.x
+            y_fused = w * lp.y + (1.0 - w) * wp.y
+        else:
+            x_fused = wheel.pose.pose.position.x
+            y_fused = wheel.pose.pose.position.y
+
+        # 7. 速度：用轮式（控制更可靠），wz 用 IMU 原始角速度（更准）
+        vx = wheel.twist.twist.linear.x
+        vy = wheel.twist.twist.linear.y
+        wz = self.gyro_z if abs(self.gyro_z) > 1e-6 else wheel.twist.twist.angular.z
+
+        # ── 发布 /odom_fused ──
+        out = Odometry()
+        out.header.stamp = self.get_clock().now().to_msg()
+        out.header.frame_id = self.get_parameter('out_frame').value
+        out.child_frame_id = self.get_parameter('base_frame').value
+        out.pose.pose.position.x = x_fused
+        out.pose.pose.position.y = y_fused
+        out.pose.pose.position.z = 0.0
+        out.pose.pose.orientation = quat_from_yaw(yaw_fused)
+        # 协方差：融合后比单一来源更可信，给较小值
+        out.pose.covariance[0] = 0.01    # x
+        out.pose.covariance[7] = 0.01    # y
+        out.pose.covariance[35] = 0.005  # yaw
+        out.twist.twist.linear.x = vx
+        out.twist.twist.linear.y = vy
+        out.twist.twist.angular.z = wz
+        out.twist.covariance[0] = 0.01
+        out.twist.covariance[7] = 0.01
+        out.twist.covariance[35] = 0.01
+        self.odom_pub.publish(out)
+
+        # ── 发布 TF ──
+        if self.get_parameter('publish_tf').value:
+            tf = TransformStamped()
+            tf.header.stamp = out.header.stamp
+            tf.header.frame_id = self.get_parameter('out_frame').value
+            tf.child_frame_id = self.get_parameter('base_frame').value
+            tf.transform.translation.x = x_fused
+            tf.transform.translation.y = y_fused
+            tf.transform.translation.z = 0.0
+            tf.transform.rotation = quat_from_yaw(yaw_fused)
+            self.tf_broadcaster.sendTransform(tf)
+
+        # ── 发布诊断（供 Web 可视化）──
+        diag = {
+            't': round(t, 3),
+            'trust_w': round(w, 3),                    # 激光可信度 [0,1]
+            'scan_valid_ratio': round(self.scan_valid_ratio, 3),
+            'bias_b_rad_s': round(self.b_smooth, 6),   # 估计的零偏 (rad/s)
+            'bias_b_deg_s': round(math.degrees(self.b_smooth), 4),
+            'bias_b_raw': round(math.degrees(self.b_raw), 4),
+            'bias_cumulative_deg': round(math.degrees(self.b_cumulative), 2),
+            'bias_samples': self.bias_samples,
+            'yaw_wheel_deg': round(math.degrees(yaw_wheel), 2),
+            'yaw_wheel_corrected_deg': round(math.degrees(yaw_wheel_corrected), 2),
+            'yaw_laser_deg': round(math.degrees(yaw_laser), 2) if self.laser_latest else None,
+            'yaw_fused_deg': round(math.degrees(yaw_fused), 2),
+            'gyro_z_rad_s': round(self.gyro_z, 4),
+            'x_fused': round(x_fused, 3),
+            'y_fused': round(y_fused, 3),
+        }
+        diag_msg = String()
+        diag_msg.data = json.dumps(diag, ensure_ascii=False)
+        self.diag_pub.publish(diag_msg)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = OdomFusionNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

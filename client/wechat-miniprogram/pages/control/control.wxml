@@ -1,0 +1,98 @@
+<view class="page">
+
+  <!-- 连接状态 -->
+  <view class="status-bar">
+    <view class="dot {{connected ? 'dot-on' : 'dot-off'}}"></view>
+    <text class="status-text">{{connected ? '已连接' : '未连接'}}</text>
+    <text class="addr">{{baseUrl}}</text>
+    <view class="chip chip-{{chassisText === '看门狗停车' ? 'warn' : 'info'}}">{{chassisText}}</view>
+  </view>
+
+  <!-- 巡检在进行时给个显眼提示：此时手动遥控会和巡检抢底盘 -->
+  <view class="banner" wx:if="{{inspRunning}}" bindtap="onGotoInspection">
+    <text class="banner-text">⚠ 巡检进行中（{{inspText}}）· 手动遥控会与它抢底盘，点此查看</text>
+  </view>
+
+  <!-- 遥测摘要 -->
+  <view class="telem-card">
+    <view class="cell">
+      <text class="k">X (m)</text>
+      <text class="v">{{x}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">Y (m)</text>
+      <text class="v">{{y}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">航向（罗盘）</text>
+      <text class="v">{{headingText}} <text class="v-sub">{{sector}}</text></text>
+    </view>
+    <view class="cell">
+      <text class="k">Vx (m/s)</text>
+      <text class="v">{{vx}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">Vy (m/s)</text>
+      <text class="v">{{vy}}</text>
+    </view>
+    <view class="cell">
+      <text class="k">Wz (rad/s)</text>
+      <text class="v">{{wz}}</text>
+    </view>
+  </view>
+
+  <!-- 摇杆 -->
+  <view class="joy-wrap">
+    <joystick size="{{260}}" bind:move="onJoyMove" bind:end="onJoyEnd"></joystick>
+    <text class="joy-hint">上推前进 · 左推左转 · 右推右转</text>
+  </view>
+
+  <!-- 横移 + 急停 -->
+  <view class="btn-row">
+    <button class="shift-btn" catchtouchstart="onShiftStart" catchtouchend="onShiftEnd"
+            catchtouchcancel="onShiftEnd" data-dir="1">左移</button>
+    <button class="stop-btn" bindtap="onStop">STOP</button>
+    <button class="shift-btn" catchtouchstart="onShiftStart" catchtouchend="onShiftEnd"
+            catchtouchcancel="onShiftEnd" data-dir="-1">右移</button>
+  </view>
+
+  <!-- 点动 -->
+  <view class="panel">
+    <view class="panel-title">点动（按一下走 {{pulseMs}} ms 后自动停）</view>
+    <view class="quick-grid">
+      <button class="quick-btn" bindtap="onPulse" data-dir="fwd">前进</button>
+      <button class="quick-btn" bindtap="onPulse" data-dir="back">后退</button>
+      <button class="quick-btn" bindtap="onPulse" data-dir="left">左移</button>
+      <button class="quick-btn" bindtap="onPulse" data-dir="right">右移</button>
+      <button class="quick-btn" bindtap="onPulse" data-dir="ccw">原地左转</button>
+      <button class="quick-btn" bindtap="onPulse" data-dir="cw">原地右转</button>
+    </view>
+  </view>
+
+  <!-- 速度调节 -->
+  <view class="panel">
+    <view class="slider-row">
+      <text class="slider-label">线速度</text>
+      <slider class="slider" min="0.05" max="{{limits.vx}}" step="0.05" value="{{speed}}"
+              activeColor="#3b82f6" block-size="22" bindchange="onSpeedChange" />
+      <text class="slider-val">{{speed}} m/s</text>
+    </view>
+    <view class="slider-row">
+      <text class="slider-label">旋转</text>
+      <slider class="slider" min="0.2" max="{{limits.wz}}" step="0.1" value="{{rotationSpeed}}"
+              activeColor="#8b5cf6" block-size="22" bindchange="onRotationChange" />
+      <text class="slider-val">{{rotationSpeed}} rad/s</text>
+    </view>
+    <view class="note">上限已与后端限幅对齐（Vx/Vy ≤ {{limits.vx}}，Wz ≤ {{limits.wz}}）</view>
+  </view>
+
+  <!-- 自定义命令 -->
+  <view class="panel raw-panel">
+    <input class="raw-input" placeholder="V,0.2,0,0.5 或 STOP"
+           value="{{rawCmd}}" bindinput="onRawInput"
+           confirm-type="send" bindconfirm="onRawSend" />
+    <button class="raw-send" size="mini" bindtap="onRawSend">发送</button>
+  </view>
+  <view class="hint-line" wx:if="{{rawHint}}">{{rawHint}}</view>
+
+</view>

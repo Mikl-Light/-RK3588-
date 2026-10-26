@@ -1,0 +1,11 @@
+<view class="joy {{active ? 'joy-active' : ''}}"
+      style="width:{{size}}px;height:{{size}}px;"
+      catchtouchstart="onTouchStart"
+      catchtouchmove="onTouchMove"
+      catchtouchend="onTouchEnd"
+      catchtouchcancel="onTouchCancel">
+  <view class="joy-ring"></view>
+  <view class="joy-cross-h"></view>
+  <view class="joy-cross-v"></view>
+  <view class="joy-knob" style="transform:translate(calc({{knobX}}px - 50%), calc({{knobY}}px - 50%));"></view>
+</view>

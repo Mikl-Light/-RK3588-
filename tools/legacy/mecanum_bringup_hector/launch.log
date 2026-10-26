@@ -1,0 +1,19 @@
+1787595792.7321029 [INFO] [launch]: All log files can be found below /home/mikl/.ros/log/2026-08-25-02-23-12-729935-mikl-4804
+1787595792.7324176 [INFO] [launch]: Default logging verbosity is set to INFO
+1787595792.9113679 [INFO] [serial_bridge-1]: process started with pid [4807]
+1787595792.9126313 [INFO] [rplidar_node-2]: process started with pid [4808]
+1787595792.9157612 [INFO] [static_transform_publisher-3]: process started with pid [4809]
+1787595792.9175892 [INFO] [rf2o_laser_odometry_node-4]: process started with pid [4810]
+1787595792.9191329 [INFO] [map_server-5]: process started with pid [4811]
+1787595792.9204879 [INFO] [amcl-6]: process started with pid [4812]
+1787595792.9223373 [INFO] [planner_server-7]: process started with pid [4813]
+1787595792.9232326 [INFO] [controller_server-8]: process started with pid [4814]
+1787595792.9240408 [INFO] [behavior_server-9]: process started with pid [4815]
+1787595792.9248314 [INFO] [bt_navigator-10]: process started with pid [4816]
+1787595792.9255073 [INFO] [lifecycle_manager-11]: process started with pid [4819]
+1787595792.9261816 [INFO] [map_trigger-12]: process started with pid [4824]
+1787595793.1416693 [static_transform_publisher-3] [INFO] [1787595793.139954129] [static_transform_publisher_XksuubdlMhQv0y6F]: Spinning until stopped - publishing transform
+1787595793.1427500 [static_transform_publisher-3] translation: ('0.130000', '0.000000', '0.030000')
+1787595793.1432178 [static_transform_publisher-3] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+1787595793.1435995 [static_transform_publisher-3] from 'base_link' to 'laser'
+1787595823.9783742 [ERROR] [map_trigger-12]: process has died [pid 4824, exit code 1, cmd '/home/mikl/ros2_ws/install/mecanum_bringup_hector/lib/mecanum_bringup_hector/map_trigger --ros-args -r __node:=map_trigger'].

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>odom_fusion</name>
+  <version>0.1.0</version>
+  <description>
+    轮式里程计 + 激光里程计 + IMU 融合节点。
+    核心功能：
+      1. 基于 /scan 特征丰富度的激光退化检测
+      2. 用激光 yaw 作为真值参考，在线估计陀螺零偏（yaw 漂移率）
+      3. 特征区信激光、开阔区信轮式+陀螺的动态加权融合
+      4. 输出 /odom_fused + TF，以及 /fusion_diag 诊断话题（供 Web 可视化）
+    完全独立，不修改 mecanum_bringup / mecanum_bringup_hector / rf2o 任何代码。
+  </description>
+  <maintainer email="user@example.com">ODOM Project</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

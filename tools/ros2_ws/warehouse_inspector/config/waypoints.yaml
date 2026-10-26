@@ -1,0 +1,54 @@
+# ============================================================================
+# 巡检航点示例（map 坐标系，单位：米 / 弧度）
+#
+# 说明：
+#   x, y    必填，map 坐标系下的目标位置
+#   yaw     可选，到点朝向（弧度）。**拍照类航点建议写**，
+#           否则车到位时的朝向取决于规划结果，照片构图每次都不一样。
+#           0 = +x 方向, 1.5708 = +y 方向, 3.1416 = -x, -1.5708 = -y
+#   settle  可选，到点后等多少秒再拍（覆盖全局 settle_time）
+#   note    可选，写进巡检报告，方便归档
+#
+# 用法：
+#   在 RViz 里把车开到想巡检的位置，读 /global_costmap/costmap 下的
+#   机器人位姿（或用 tf2_echo map base_link），把 x/y/yaw 填进来。
+#
+#   ⚠ 不想手抄坐标就别用这个文件 —— 用 launch 的 collect_mode:=true，
+#     在 RViz 里用「2D Goal Pose」连点多个点，点完调一次 ~/start 就跑完；
+#     收集结果写在 ~/inspection_shots/collected_waypoints.yaml，
+#     而且**优先于本文件**（调 ~/clear 清空后回落到本文件）。
+#     详见 README §4.B。
+#
+# 下面这几个只是**示意值**，必须按你的实际场地改掉。
+# ============================================================================
+
+loop: false
+
+waypoints:
+  - name: origin
+    x: 0.00
+    y: 0.00
+    yaw: 0.00
+    settle: 1.0
+    note: 起点/出厂位
+
+  - name: aisle_north
+    x: 1.20
+    y: 0.60
+    yaw: 1.5708
+    settle: 1.5
+    note: 北侧过道口，检查通道是否被占
+
+  - name: shelf_east
+    x: 2.10
+    y: -0.40
+    yaw: 0.0000
+    settle: 2.0
+    note: 东侧货架正面
+
+  - name: return_home
+    x: 0.10
+    y: 0.05
+    yaw: -1.5708
+    settle: 1.0
+    note: 返回起点

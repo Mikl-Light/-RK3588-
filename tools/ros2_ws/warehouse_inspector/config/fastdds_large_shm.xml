@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS profile：放大共享内存（SHM）传输段，让大消息（相机图像）能走 SHM。
+
+  为什么需要它（2026-09-13 实测）：
+    Fast DDS 内置 SHM 传输的默认单消息上限是 512 KB（524288 字节），
+    超过就退化成 UDP 分片；在 aarch64 单板机上 UDP 分片几乎全部丢掉。
+    实测（发布端两种情况都稳定自报 14.6 fps，即相机没问题、是传输丢了）：
+      320x240，每帧 225 KB（小于 512 KB，走 SHM） => 订阅端 180 帧/12s = 14.9 fps
+      640x480，每帧 900 KB（超过 512 KB，走 UDP） => 订阅端   0 帧/12s
+    把 SHM 段放大到 4 MB 后，640x480 实测 181 帧/12s = 15.1 fps。
+
+  用法（见 launch/inspection.launch.py，用 SetEnvironmentVariable 设一次即可）：
+      export FASTRTPS_DEFAULT_PROFILES_FILE=<这个文件>
+    只需让「发布图像」和「订阅图像」的节点都拿到这个环境变量。
+
+  注意：
+    1. 段大小必须是 2 的幂，且不小于 maxMessageSize。这里都是 4 MB。
+    2. 保留 UDPv4 传输，所以与没设这个 profile 的外部节点仍能正常发现与通信
+       （只是互相之间走 UDP、享受不到大消息红利）。
+    3. 单帧超过 4 MB 时同样会掉：1280x720 bgr8 是 2.7 MB 可以，
+       1920x1080 bgr8 是 5.9 MB 不行；要更高分辨率就再把两个数放大。
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>shm_large</transport_id>
+      <type>SHM</type>
+      <maxMessageSize>4194304</maxMessageSize>
+      <segment_size>4194304</segment_size>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>udp_large</transport_id>
+      <type>UDPv4</type>
+      <maxMessageSize>65500</maxMessageSize>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="shm_large_participant" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>shm_large</transport_id>
+        <transport_id>udp_large</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+
+</profiles>

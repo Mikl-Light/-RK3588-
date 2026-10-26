@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>traffic_sign_control</name>
+  <version>0.1.0</version>
+  <description>交通标志 AI 识别 → 麦轮底盘动作执行（独立控制包，复用键盘方案的 /cmd_vel 控制方式，ROS2 Jazzy）</description>
+  <maintainer email="dev@example.com">dev</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <exec_depend>mecanum_bringup</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
